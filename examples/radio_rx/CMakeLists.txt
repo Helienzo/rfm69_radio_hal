@@ -31,7 +31,7 @@ project(hal_radio_rx C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-add_subdirectory(../../)
+add_subdirectory(../../../hal_radio)
 add_subdirectory(../../submodules/c_buffer)
 add_subdirectory(../../submodules/pi_pico_gpio_hal)
 add_subdirectory(../../submodules/rfm69_rp2040)
@@ -43,7 +43,7 @@ add_executable(hal_radio_rx
 )
 
 # pull in common dependencies
-target_link_libraries(hal_radio_rx pico_stdlib hardware_spi rfm69_rp2040 c_buffer pi_pico_gpio_hal rfm69_rp2040)
+target_link_libraries(hal_radio_rx pico_stdlib hardware_spi rfm69_rp2040 c_buffer pi_pico_gpio_hal rfm69_radio_hal)
 
 if (PICO_CYW43_SUPPORTED)
     target_link_libraries(hal_radio_rx pico_cyw43_arch_none)
