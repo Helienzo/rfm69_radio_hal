@@ -1,0 +1,9 @@
+[submodule "submodules/c_buffer"]
+	path = submodules/c_buffer
+	url = git@github.com:Helienzo/c_buffer.git
+[submodule "submodules/pi_pico_gpio_hal"]
+	path = submodules/pi_pico_gpio_hal
+	url = git@github.com:Helienzo/pi_pico_gpio_hal.git
+[submodule "submodules/rfm69_rp2040"]
+	path = submodules/rfm69_rp2040
+	url = git@github.com:Helienzo/rfm69_rp2040.git
