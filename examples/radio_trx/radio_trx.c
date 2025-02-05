@@ -5,12 +5,13 @@
 #include "pico_bootsel_button.h"
 
 // Radio configuration defines
-#define RADIO_MY_ADDR         0x02
-#define RADIO_TARGET_ADDR     0x01
-#define RADIO_BROADCAST_ADDR  0xFF
-#define RADIO_DEFAULT_CHANNEL 868
+#define RADIO_MY_ADDR         (0x02)
+#define RADIO_TARGET_ADDR     (0x01)
+#define RADIO_BROADCAST_ADDR  (0xFF)
+#define RADIO_DEFAULT_CHANNEL (868)
 #define RADIO_RX_BUFFER_SIZE  (128 + C_BUFFER_ARRAY_OVERHEAD)
 #define RADIO_TX_BUFFER_SIZE  (128 + C_BUFFER_ARRAY_OVERHEAD) 
+#define RADIO_TX_POWER_DBM    (0)
 
 #ifndef LOG
 #define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
@@ -140,6 +141,7 @@ int main()
         .broadcast_address = RADIO_BROADCAST_ADDR,
         .rx_address        = RADIO_MY_ADDR,
         .channel           = RADIO_DEFAULT_CHANNEL,
+        .power_dbm         = RADIO_TX_POWER_DBM,
     };
 
     res = halRadioInit(&my_instance.hal_radio_inst, hal_config);

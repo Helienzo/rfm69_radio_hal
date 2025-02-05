@@ -407,7 +407,8 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         return HAL_RADIO_CONFIG_ERROR;
     }
 
-    if (!rfm69_power_level_set(&inst->rfm, 13)) {
+    inst->config.power_dbm = hal_config.power_dbm;
+    if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
@@ -631,7 +632,7 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
     }
 
     // Set the tx power level
-	if (!rfm69_power_level_set(&inst->rfm, 0)) {
+	if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
