@@ -7,7 +7,7 @@ To test this module check out the examples.
   
 ## Connect the RFM69 chip to Pi Pico As follows:
   
-PICO 16 - MISO
+PICO 16 - MISO  
 PICO 17 - NSS  
 PICO 18 - SCK  
 PICO 19 - MOSI  
