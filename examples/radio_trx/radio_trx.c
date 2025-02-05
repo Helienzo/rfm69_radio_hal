@@ -4,9 +4,22 @@
 #include "hal_radio.h"
 #include "pico_bootsel_button.h"
 
+
+/*
+ This example can be flashed to two PICO's with a RFM69 radio.
+ Both radios will be in RX mode waiting for a packets.
+ Send a packet by pressing the pico bootsel button. This switches the radio to TX mode, sends the
+ packet and then returns to RX mode.
+
+ The radio is configured in interrupt mode to notify about send complete, and packet available.
+ how ever, the callbacks are not in ISR context, they are called through the proccess function.
+
+ Note that the example uses the broadcast address to enable flashing without changing addresses.
+*/
+
 // Radio configuration defines
-#define RADIO_MY_ADDR         (0x02)
-#define RADIO_TARGET_ADDR     (0x01)
+#define RADIO_MY_ADDR         (0x02) // Change this to target specific radios
+#define RADIO_TARGET_ADDR     (0x01) // Change this to target specific radios
 #define RADIO_BROADCAST_ADDR  (0xFF)
 #define RADIO_DEFAULT_CHANNEL (868)
 #define RADIO_RX_BUFFER_SIZE  (128 + C_BUFFER_ARRAY_OVERHEAD)
@@ -70,7 +83,7 @@ void buttonEventCb(picoBootSelButtonInterface_t *interface, picoBootSelButtonEve
 
     // Set the interface buffer to the tx_buffer
     inst->hal_interface.pkt_buffer = &inst->tx_buffer;
-    res = halRadioSendPackageNB(&inst->hal_radio_inst, &inst->hal_interface, RADIO_BROADCAST_ADDR);
+    res = halRadioSendPackageNB(&inst->hal_radio_inst, &inst->hal_interface, RADIO_BROADCAST_ADDR); // Use TARGET_ADDR to target specific radios
 
     if (res != HAL_RADIO_SUCCESS) {
         LOG("RADIO SEND FAILED! %i\n", res);
