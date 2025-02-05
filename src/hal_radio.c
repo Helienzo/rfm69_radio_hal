@@ -27,7 +27,10 @@
 */
 
 #include "hal_radio.h"
-#include "common.h"
+
+#ifndef LOG
+#define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
+#endif
 
 #define PACKET_RX_POLL_TIME_MS 10
 

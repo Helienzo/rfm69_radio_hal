@@ -36,7 +36,7 @@ include(FetchContent)
 FetchContent_Declare(
   rfm69_rp2040
   GIT_REPOSITORY https://github.com/Helienzo/rfm69_rp2040.git
-  GIT_TAG        main
+  GIT_TAG        feature/expose_magic_numbers
 )
 FetchContent_MakeAvailable(rfm69_rp2040)
 
@@ -54,10 +54,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(pi_pico_gpio_hal)
 
+FetchContent_Declare(
+  pico_bootsel_button
+  GIT_REPOSITORY https://github.com/Helienzo/pico_bootsel_button.git
+  GIT_TAG        main
+)
+FetchContent_MakeAvailable(pico_bootsel_button)
+
+set(MODULE_PATH "../..")
+add_subdirectory(${MODULE_PATH} libs/rfm69_radio_hal)
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(radio_tx radio_tx.c )
+add_executable(radio_tx radio_tx.c)
 
 pico_set_program_name(radio_tx "radio_tx")
 pico_set_program_version(radio_tx "0.1")
@@ -81,6 +90,8 @@ target_link_libraries(radio_tx
         rfm69_rp2040
         c_buffer
         pi_pico_gpio_hal
+        rfm69_radio_hal
+        pico_bootsel_button
         )
 
 pico_add_extra_outputs(radio_tx)

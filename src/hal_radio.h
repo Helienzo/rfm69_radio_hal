@@ -36,6 +36,10 @@
 #include "hal_gpio.h"
 #include "c_buffer.h"
 
+#ifndef CONTAINER_OF
+#define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
+#endif
+
 #define HAL_RADIO_SPI_INST spi0
 #define HAL_RADIO_PIN_MISO (16)
 #define HAL_RADIO_PIN_CS   (17)
