@@ -4,7 +4,7 @@ Using https://github.com/e-mo/rfm69_rp2040 as hardware driver.
 This library intends to make it easy to configure and use the rfm69 radio in interrupt mode with a pi pico.  
   
 To test this module check out the examples.  
-Note that the examples pulls in a couple of submodules using CMAKE FetchContent. Check the the examples/<example>/CMakeLists.txt, for source repos.  
+Note that the examples pulls in a couple of submodules using CMAKE FetchContent. Check the the examples/example/CMakeLists.txt, for source repos.  
   
 ## Connect the RFM69 chip to Pi Pico As follows:
   
