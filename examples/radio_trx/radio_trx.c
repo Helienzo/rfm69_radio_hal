@@ -53,21 +53,23 @@ void pico_set_led(bool led_on) {
 }
 
 void buttonEventCb(picoBootSelButtonInterface_t *interface, picoBootSelButtonEvent_t event) {
-    int32_t res = cBufferPrepend(&my_instance.tx_buffer, msg, sizeof(msg));
+    myInstance_t * inst = CONTAINER_OF(interface, myInstance_t, btn_interface);
+
+    int32_t res = cBufferPrepend(&inst->tx_buffer, msg, sizeof(msg));
     if (res != sizeof(msg)) {
         LOG("RADIO SEND FAILED! %i\n", res);
         device_error();
     }
 
-    res = halRadioCancelReceive(&my_instance.hal_radio_inst);
+    res = halRadioCancelReceive(&inst->hal_radio_inst);
     if (res != HAL_RADIO_SUCCESS) {
         LOG("RADIO CANCEL RECEIVE FAILED! %i\n", res);
         device_error();
     }
 
     // Set the interface buffer to the tx_buffer
-    my_instance.hal_interface.pkt_buffer = &my_instance.tx_buffer;
-    res = halRadioSendPackageNB(&my_instance.hal_radio_inst, &my_instance.hal_interface, RADIO_BROADCAST_ADDR);
+    inst->hal_interface.pkt_buffer = &inst->tx_buffer;
+    res = halRadioSendPackageNB(&inst->hal_radio_inst, &inst->hal_interface, RADIO_BROADCAST_ADDR);
 
     if (res != HAL_RADIO_SUCCESS) {
         LOG("RADIO SEND FAILED! %i\n", res);
