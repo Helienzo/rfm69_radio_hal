@@ -40,15 +40,38 @@
 #define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
 #endif
 
+#ifndef HAL_RADIO_SPI_INST
 #define HAL_RADIO_SPI_INST spi0
-#define HAL_RADIO_PIN_MISO (16)
-#define HAL_RADIO_PIN_CS   (17)
-#define HAL_RADIO_PIN_SCK  (18)
-#define HAL_RADIO_PIN_MOSI (19)
-#define HAL_RADIO_PIN_RST  (20)
-#define HAL_RADIO_PIN_DIO0 (21)
+#endif /* HAL_RADIO_SPI_INST */
 
-#define HAL_RADIO_MAX_BUFFER_SIZE  128 // The RFM69 radio actually supports 255
+#ifndef HAL_RADIO_PIN_MISO
+#define HAL_RADIO_PIN_MISO (16)
+#endif /* HAL_RADIO_PIN_MISO */
+
+#ifndef HAL_RADIO_PIN_CS
+#define HAL_RADIO_PIN_CS   (17)
+#endif /* HAL_RADIO_PIN_CS */
+
+#ifndef HAL_RADIO_PIN_SCK
+#define HAL_RADIO_PIN_SCK  (18)
+#endif /* HAL_RADIO_PIN_SCK */
+
+#ifndef HAL_RADIO_PIN_MOSI
+#define HAL_RADIO_PIN_MOSI (19)
+#endif /* HAL_RADIO_PIN_MOSI */
+
+#ifndef HAL_RADIO_PIN_RST
+#define HAL_RADIO_PIN_RST (20)
+#endif /* HAL_RADIO_PIN_RST */
+
+#ifndef HAL_RADIO_PIN_DIO0
+#define HAL_RADIO_PIN_DIO0 (21)
+#endif /* HAL_RADIO_PIN_DIO0 */
+
+#ifndef HAL_RADIO_MAX_BUFFER_SIZE
+#define HAL_RADIO_MAX_BUFFER_SIZE (128) // The RFM69 radio actually supports 255
+#endif /* HAL_RADIO_MAX_BUFFER_SIZE */
+
 #define HAL_RADIO_PACKET_SIZE_SIZE 1
 #define HAL_RADIO_PACKET_ADDR_SIZE 1
 #define HAL_RADIO_PACKET_OVERHEAD  (HAL_RADIO_PACKET_SIZE_SIZE + HAL_RADIO_PACKET_ADDR_SIZE)
