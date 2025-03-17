@@ -37,6 +37,7 @@
 static int32_t managePacketSent(halRadio_t *inst) {
     // Read the packet sent flag
     bool state = false;
+    int32_t cb_res = HAL_RADIO_CB_SUCCESS;
     rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PACKET_SENT, &state);
 
     // If the package was not sent this is an invalid interrupt, bad ..
@@ -53,15 +54,18 @@ static int32_t managePacketSent(halRadio_t *inst) {
 
         // Reset the radio mode
         inst->mode = HAL_RADIO_IDLE;
-        return HAL_RADIO_SEND_FAIL;
-    }
 
-    inst->mode = HAL_RADIO_TX_IDLE;
+        // Notify that the package send failed
+        if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
+            cb_res = inst->package_callback->pkg_sent_cb(inst->package_callback, &inst->active_package, HAL_RADIO_SEND_FAIL);
+        }
+    } else {
+        inst->mode = HAL_RADIO_TX_IDLE;
 
-    int32_t cb_res = HAL_RADIO_CB_SUCCESS;
-    // Notify that the package was sent
-    if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
-        cb_res = inst->package_callback->pkg_sent_cb(inst->package_callback, &inst->active_package, HAL_RADIO_SUCCESS);
+        // Notify that the package was successfully sent
+        if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
+            cb_res = inst->package_callback->pkg_sent_cb(inst->package_callback, &inst->active_package, HAL_RADIO_SUCCESS);
+        }
     }
 
     // Manage result from callback
