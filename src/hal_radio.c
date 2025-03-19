@@ -634,17 +634,17 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
         return HAL_RADIO_BUFFER_ERROR;
     }
 
-    if (inst->mode == HAL_RADIO_TX) {
+    if (inst->mode == HAL_RADIO_TX_IDLE) {
         return HAL_RADIO_SUCCESS;
     }
 
     // Set the tx power level
-	if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
+    if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-	// Switch to TX mode to send buffer
-	if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
+    // Switch to TX mode to send buffer
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
