@@ -44,6 +44,10 @@
 #define HAL_RADIO_SPI_INST spi0
 #endif /* HAL_RADIO_SPI_INST */
 
+#ifndef HAL_RADIO_SPI_BAUD_RATE
+#define HAL_RADIO_SPI_BAUD_RATE 10000000
+#endif /* HAL_RADIO_SPI_BAUD_RATE */
+
 #ifndef HAL_RADIO_PIN_MISO
 #define HAL_RADIO_PIN_MISO (16)
 #endif /* HAL_RADIO_PIN_MISO */
@@ -265,10 +269,19 @@ int32_t halRadioGetMode(halRadio_t *inst);
 
 /**
  * Convert a bitrate to estimated delay for sending a specific number of bytes
+ * Input: Pointer to radio instance
  * Input: Bitrate enum
  * Input: Num bytes to send
- * Returns: halRadioErr_t or sen
+ * Returns: halRadioErr_t or time
  */
 int32_t halRadioBitRateToDelayUs(halRadio_t *inst, halRadioBitrate_t bitrate, uint8_t num_bytes);
+
+/**
+ * Calculate how many us it takes to transfer num_bytes over the spi interface to the radio.
+ * Input: Pointer to radio instance
+ * Input: Number of bytes to send
+ * Returns: halRadioErr_t or time
+ */
+int32_t halRadioSpiDelayEstimateUs(halRadio_t *inst, uint8_t num_bytes);
 
 #endif /* HAL_RADIO_H */

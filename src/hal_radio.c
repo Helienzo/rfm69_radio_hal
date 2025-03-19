@@ -34,6 +34,9 @@
 
 #define PACKET_RX_POLL_TIME_MS 10
 
+// Constant for calculating time used by the spi to send X bytes
+static const float kHalRadioSpiUsPerByte = (8.0f * 1000000.0f)/HAL_RADIO_SPI_BAUD_RATE;
+
 static int32_t managePacketSent(halRadio_t *inst) {
     // Read the packet sent flag
     bool state = false;
@@ -244,7 +247,7 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
     }
 
     // Initialize the spi
-    spi_init(HAL_RADIO_SPI_INST, 1000*1000);
+    spi_init(HAL_RADIO_SPI_INST, HAL_RADIO_SPI_BAUD_RATE);
     gpio_set_function(HAL_RADIO_PIN_MISO, GPIO_FUNC_SPI);
     gpio_set_function(HAL_RADIO_PIN_SCK,  GPIO_FUNC_SPI);
     gpio_set_function(HAL_RADIO_PIN_MOSI, GPIO_FUNC_SPI);
@@ -886,6 +889,24 @@ int32_t halRadioBitRateToDelayUs(halRadio_t *inst, halRadioBitrate_t bitrate, ui
         default:
             return HAL_RADIO_INVALID_RATE;
     }
+
+    return time_us;
+}
+
+int32_t halRadioSpiDelayEstimateUs(halRadio_t *inst, uint8_t num_bytes) {
+    if (inst == NULL || num_bytes == 0) {
+        return HAL_RADIO_NULL_ERROR;
+    }
+
+    // Verify that the value of the num_bytes is withing the maximum value
+    if (num_bytes > (255 - (RFM69_DEFAULT_SYNC_WORD_LEN + RFM69_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD))) {
+        return HAL_RADIO_INVALID_SIZE;
+    }
+
+    // Add the overhead created by the radio and hal layer
+    num_bytes += RFM69_DEFAULT_SYNC_WORD_LEN + RFM69_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD;
+
+    int32_t time_us = (int32_t)num_bytes*kHalRadioSpiUsPerByte;
 
     return time_us;
 }
