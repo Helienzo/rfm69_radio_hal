@@ -503,7 +503,7 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
     }
 
     // Configure dio0 to create an interrupt on payload ready
-    if (!rfm69_dio0_rx_mode_config_set(&inst->rfm, RFM69_DIO0_PKT_RX_PAYLOAD_READY)) {
+    if (!rfm69_dio0_config_set(&inst->rfm, RFM69_DIO0_PKT_RX_PAYLOAD_READY)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
@@ -700,7 +700,7 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
     }
 
     // Configure dio0 to trigger packet sent interrupt
-    if (!rfm69_dio0_tx_mode_config_set(&inst->rfm, RFM69_DIO0_PKT_TX_PACKET_SENT)) {
+    if (!rfm69_dio0_config_set(&inst->rfm, RFM69_DIO0_PKT_TX_PACKET_SENT)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
@@ -795,7 +795,7 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
     }
 
     // Configure dio0 to trigger packet sent interrupt
-    if (!rfm69_dio0_tx_mode_config_set(&inst->rfm, RFM69_DIO0_PKT_TX_PACKET_SENT)) {
+    if (!rfm69_dio0_config_set(&inst->rfm, RFM69_DIO0_PKT_TX_PACKET_SENT)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 

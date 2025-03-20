@@ -35,8 +35,8 @@ pico_sdk_init()
 include(FetchContent)
 FetchContent_Declare(
   rfm69_rp2040
-  GIT_REPOSITORY https://github.com/Helienzo/rfm69_rp2040.git
-  GIT_TAG        feature/expose_magic_numbers
+  GIT_REPOSITORY https://github.com/Helienzo/rp2x_rfm69.git
+  GIT_TAG        main
 )
 FetchContent_MakeAvailable(rfm69_rp2040)
 
