@@ -34,6 +34,9 @@
 
 #define PACKET_RX_POLL_TIME_MS 10
 
+// Constant for calculating time used by the spi to send X bytes
+static const float kHalRadioSpiUsPerByte = (8.0f * 1000000.0f)/HAL_RADIO_SPI_BAUD_RATE;
+
 static int32_t managePacketSent(halRadio_t *inst) {
     // Read the packet sent flag
     bool state = false;
@@ -244,7 +247,7 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
     }
 
     // Initialize the spi
-    spi_init(HAL_RADIO_SPI_INST, 1000*1000);
+    spi_init(HAL_RADIO_SPI_INST, HAL_RADIO_SPI_BAUD_RATE);
     gpio_set_function(HAL_RADIO_PIN_MISO, GPIO_FUNC_SPI);
     gpio_set_function(HAL_RADIO_PIN_SCK,  GPIO_FUNC_SPI);
     gpio_set_function(HAL_RADIO_PIN_MOSI, GPIO_FUNC_SPI);
@@ -500,7 +503,7 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
     }
 
     // Configure dio0 to create an interrupt on payload ready
-    if (!rfm69_dio0_rx_mode_config_set(&inst->rfm, RFM69_DIO0_PKT_RX_PAYLOAD_READY)) {
+    if (!rfm69_dio0_config_set(&inst->rfm, RFM69_DIO0_PKT_RX_PAYLOAD_READY)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
@@ -622,6 +625,12 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
     // When it is an outgoing packet the address is my address
     inst->active_package.address = inst->config.rx_address;
 
+    // Reset the IRQ registers
+    uint8_t buf[2] = {0xFF,0xFF};
+    if (!rfm69_write(&inst->rfm, RFM69_REG_IRQ_FLAGS_1, buf, 2)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
     // Write the package to the radio
     if (!rfm69_write(&inst->rfm, RFM69_REG_FIFO, tx_buffer, inst->current_tx_size)) {
         return HAL_RADIO_DRIVER_ERROR;
@@ -631,19 +640,39 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
         return HAL_RADIO_BUFFER_ERROR;
     }
 
-    if (inst->mode == HAL_RADIO_TX) {
+    if (inst->mode == HAL_RADIO_TX_IDLE) {
         return HAL_RADIO_SUCCESS;
     }
 
     // Set the tx power level
-	if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
+    if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-	// Switch to TX mode to send buffer
-	if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
+    // Switch to TX mode to send buffer
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
+
+    return HAL_RADIO_SUCCESS;
+}
+
+int32_t halRadioEnterTX(halRadio_t *inst) {
+    if (inst == NULL) {
+        return HAL_RADIO_NULL_ERROR;
+    }
+
+    // Set the tx power level
+    if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    // Switch to TX mode to send buffer
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    inst->mode = HAL_RADIO_IDLE;
 
     return HAL_RADIO_SUCCESS;
 }
@@ -671,7 +700,7 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
     }
 
     // Configure dio0 to trigger packet sent interrupt
-    if (!rfm69_dio0_tx_mode_config_set(&inst->rfm, RFM69_DIO0_PKT_TX_PACKET_SENT)) {
+    if (!rfm69_dio0_config_set(&inst->rfm, RFM69_DIO0_PKT_TX_PACKET_SENT)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
@@ -766,7 +795,7 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
     }
 
     // Configure dio0 to trigger packet sent interrupt
-    if (!rfm69_dio0_tx_mode_config_set(&inst->rfm, RFM69_DIO0_PKT_TX_PACKET_SENT)) {
+    if (!rfm69_dio0_config_set(&inst->rfm, RFM69_DIO0_PKT_TX_PACKET_SENT)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
@@ -886,6 +915,24 @@ int32_t halRadioBitRateToDelayUs(halRadio_t *inst, halRadioBitrate_t bitrate, ui
         default:
             return HAL_RADIO_INVALID_RATE;
     }
+
+    return time_us;
+}
+
+int32_t halRadioSpiDelayEstimateUs(halRadio_t *inst, uint8_t num_bytes) {
+    if (inst == NULL || num_bytes == 0) {
+        return HAL_RADIO_NULL_ERROR;
+    }
+
+    // Verify that the value of the num_bytes is withing the maximum value
+    if (num_bytes > (255 - (RFM69_DEFAULT_SYNC_WORD_LEN + RFM69_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD))) {
+        return HAL_RADIO_INVALID_SIZE;
+    }
+
+    // Add the overhead created by the radio and hal layer
+    num_bytes += RFM69_DEFAULT_SYNC_WORD_LEN + RFM69_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD;
+
+    int32_t time_us = (int32_t)num_bytes*kHalRadioSpiUsPerByte;
 
     return time_us;
 }
