@@ -625,6 +625,12 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
     // When it is an outgoing packet the address is my address
     inst->active_package.address = inst->config.rx_address;
 
+    // Reset the IRQ registers
+    uint8_t buf[2] = {0xFF,0xFF};
+    if (!rfm69_write(&inst->rfm, RFM69_REG_IRQ_FLAGS_1, buf, 2)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
     // Write the package to the radio
     if (!rfm69_write(&inst->rfm, RFM69_REG_FIFO, tx_buffer, inst->current_tx_size)) {
         return HAL_RADIO_DRIVER_ERROR;
