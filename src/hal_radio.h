@@ -262,6 +262,13 @@ int32_t halRadioCancelReceive(halRadio_t *inst);
 int32_t halRadioCancelTransmit(halRadio_t *inst);
 
 /**
+ * Enter transmit mode
+ * Input: Pointer to instance
+ * Returns: halRadioErr_t
+ */
+int32_t halRadioEnterTX(halRadio_t *inst);
+
+/**
  * Get the current hal radio mode
  * Returns: halRadioErr_t or mode
  */

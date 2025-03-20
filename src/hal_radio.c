@@ -651,6 +651,26 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
     return HAL_RADIO_SUCCESS;
 }
 
+int32_t halRadioEnterTX(halRadio_t *inst) {
+    if (inst == NULL) {
+        return HAL_RADIO_NULL_ERROR;
+    }
+
+    // Set the tx power level
+    if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    // Switch to TX mode to send buffer
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    inst->mode = HAL_RADIO_IDLE;
+
+    return HAL_RADIO_SUCCESS;
+}
+
 int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, uint8_t address) {
     if (inst == NULL || interface == NULL || interface->pkg_sent_cb == NULL || interface->pkt_buffer == NULL) {
         return HAL_RADIO_NULL_ERROR;
