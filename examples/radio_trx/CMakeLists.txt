@@ -33,12 +33,13 @@ project(radio_trx C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 include(FetchContent)
+
 FetchContent_Declare(
-  rfm69_rp2040
+  rp2x_rfm69
   GIT_REPOSITORY https://github.com/Helienzo/rp2x_rfm69.git
   GIT_TAG        main
 )
-FetchContent_MakeAvailable(rfm69_rp2040)
+FetchContent_MakeAvailable(rp2x_rfm69)
 
 FetchContent_Declare(
   c_buffer
@@ -87,7 +88,7 @@ target_include_directories(radio_trx PRIVATE
 # Add any user requested libraries
 target_link_libraries(radio_trx 
         hardware_spi
-        rfm69_rp2040
+        rp2x_rfm69_lib
         c_buffer
         pi_pico_gpio_hal
         rfm69_radio_hal
