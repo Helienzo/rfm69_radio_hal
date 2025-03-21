@@ -44,7 +44,7 @@ FetchContent_MakeAvailable(rp2x_rfm69)
 FetchContent_Declare(
   c_buffer
   GIT_REPOSITORY https://github.com/Helienzo/c_buffer.git
-  GIT_TAG        feature/build_and_test
+  GIT_TAG        main
 )
 FetchContent_MakeAvailable(c_buffer)
 

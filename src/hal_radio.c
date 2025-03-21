@@ -55,6 +55,11 @@ static int32_t managePacketSent(halRadio_t *inst) {
             return HAL_RADIO_GPIO_ERROR;
         }
 
+        // Reset the GPIO callback
+        if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
+            return HAL_RADIO_GPIO_ERROR;
+        }
+
         // Reset the radio mode
         inst->mode = HAL_RADIO_IDLE;
 
@@ -84,6 +89,11 @@ static int32_t managePacketSent(halRadio_t *inst) {
                 return HAL_RADIO_GPIO_ERROR;
             }
 
+            // Reset the GPIO callback
+            if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
+                return HAL_RADIO_GPIO_ERROR;
+            }
+
             inst->mode = HAL_RADIO_IDLE;
             return HAL_RADIO_SUCCESS;
         case HAL_RADIO_CB_DO_NOTHING:
@@ -97,6 +107,11 @@ static int32_t managePacketSent(halRadio_t *inst) {
 
             // Reset the GPIO callback
             if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO0)) != HAL_GPIO_SUCCESS) {
+                return HAL_RADIO_GPIO_ERROR;
+            }
+
+            // Reset the GPIO callback
+            if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
                 return HAL_RADIO_GPIO_ERROR;
             }
 
@@ -127,6 +142,11 @@ static int32_t managePayloadReady(halRadio_t *inst) {
     cBuffer_t *rx_buf = inst->package_callback->pkt_buffer;
     if (cBufferClear(rx_buf) < 0) {
         return HAL_RADIO_BUFFER_ERROR;
+    }
+
+    // Reset the GPIO callback, to not trigger when reading data from fifo
+    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
+        return HAL_RADIO_GPIO_ERROR;
     }
 
     // Try to Read payload size byte from FIFO
@@ -179,10 +199,19 @@ static int32_t managePayloadReady(halRadio_t *inst) {
                 return HAL_RADIO_GPIO_ERROR;
             }
 
+            // Reset the GPIO callback
+            if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
+                return HAL_RADIO_GPIO_ERROR;
+            }
+
             inst->mode = HAL_RADIO_IDLE;
             return HAL_RADIO_SUCCESS;
         case HAL_RADIO_CB_DO_NOTHING:
-            // Do nothing, indicates that the higher layer has called a hal function
+            // THis indicates that the higher layer has called a hal function
+            // Re-Enable gpio callback for fifo level
+            if (halGpioEnableIrqCbRisingEdge(&inst->gpio_dio1, HAL_RADIO_PIN_DIO1) != HAL_GPIO_SUCCESS) {
+                return HAL_RADIO_GPIO_ERROR;
+            }
             break;
         default:
             // Try to return radio to default mode
@@ -209,17 +238,20 @@ static void dio0GpioCallback(halGpioInterface_t *interface, halGpioEvents_t even
     // Store Time Of Arrival
     inst->active_package.time = time_us_64();
 
-    inst->gpio_interrupt = true;
+    inst->gpio_interrupt = HAL_RADIO_PIN_DIO0;
 }
 
-int32_t halRadioProcess(halRadio_t *inst) {
-    if (!inst->gpio_interrupt) {
-        return HAL_GPIO_SUCCESS;
-    }
+// IRQ from gpio module
+static void dio1GpioCallback(halGpioInterface_t *interface, halGpioEvents_t event) {
+    halRadio_t * inst = CONTAINER_OF(interface, halRadio_t, gpio_dio1);
 
-    // Reset the interrupt flag
-    inst->gpio_interrupt = false;
+    // Store Time Of Arrival
+    inst->active_package.time = time_us_64();
 
+    inst->gpio_interrupt = HAL_RADIO_PIN_DIO1;
+}
+
+static int32_t manageDio0Interrupt(halRadio_t *inst) {
     // Manage the radio mode
     switch(inst->mode) {
         case HAL_RADIO_TX:
@@ -236,6 +268,150 @@ int32_t halRadioProcess(halRadio_t *inst) {
     // Try to return radio to default mode
     if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
         return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    return HAL_RADIO_SUCCESS;
+}
+
+static int32_t manageTXFifoThreshold(halRadio_t *inst) {
+    LOG("TX FIFO INTERRUPT\n");
+    return HAL_RADIO_SUCCESS;
+}
+
+typedef enum {
+    HAL_RADIO_REC_IDLE,
+    HAL_RADIO_REC_DATA,
+    HAL_RADIO_END,
+} halRadioReceiveState_t;
+
+static uint8_t receiver_state = HAL_RADIO_REC_IDLE;
+static uint8_t packet_size = 0;
+
+static int32_t manageRXFifoThreshold(halRadio_t *inst) {
+    LOG("RX FIFO INTERRUPT\n");
+
+    int32_t result = HAL_RADIO_SUCCESS;
+
+    // Get the buffer pointer
+    cBuffer_t *rx_buf = inst->package_callback->pkt_buffer;
+
+    switch (receiver_state) {
+        case HAL_RADIO_REC_IDLE:
+            if (cBufferClear(rx_buf) < 0) {
+                return HAL_RADIO_BUFFER_ERROR;
+            }
+
+            // Try to Read payload size byte from FIFO
+            if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, &packet_size, 1)) {
+                return HAL_RADIO_DRIVER_ERROR;
+            }
+
+            if (packet_size > RFM69_FIFO_SIZE) {
+                LOG("Large packet transfer 1st %u\n", packet_size);
+                // Check if the packet size is valid
+                if (packet_size == 0 || packet_size > cBufferAvailableForWrite(rx_buf)) {
+                    return HAL_RADIO_INVALID_SIZE;
+                }
+
+                // Get the current write pointer
+                uint8_t * raw_rx_buffer = NULL;
+                if ((raw_rx_buffer = cBufferGetWritePointer(rx_buf)) == NULL){
+                    return HAL_RADIO_BUFFER_ERROR;
+                }
+
+                // Try to Read remaining data bytes from FIFO
+                if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, HAL_RADIO_FIFO_THRESHOLD)) {
+                    return HAL_RADIO_DRIVER_ERROR;
+                }
+
+                // Make sure that the buffer knows how many bytes is in the data array
+                if (cBufferEmptyWrite(rx_buf, HAL_RADIO_FIFO_THRESHOLD) < 0) {
+                    return HAL_RADIO_BUFFER_ERROR;
+                }
+
+                packet_size -= HAL_RADIO_FIFO_THRESHOLD;
+                receiver_state = HAL_RADIO_REC_DATA;
+            } else {
+                // This will just trigger a regular Payload Ready
+            }
+        break;
+        case HAL_RADIO_REC_DATA:
+            if (packet_size > HAL_RADIO_FIFO_THRESHOLD) {
+                LOG("Large packet transfer rest %u\n", packet_size);
+                // Check if the packet size is valid
+                if (packet_size == 0 || packet_size > cBufferAvailableForWrite(rx_buf)) {
+                    return HAL_RADIO_INVALID_SIZE;
+                }
+
+                // Get the current write pointer
+                uint8_t * raw_rx_buffer = NULL;
+                if ((raw_rx_buffer = cBufferGetWritePointer(rx_buf)) == NULL){
+                    return HAL_RADIO_BUFFER_ERROR;
+                }
+
+                // Try to Read remaining data bytes from FIFO
+                if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, HAL_RADIO_FIFO_THRESHOLD)) {
+                    return HAL_RADIO_DRIVER_ERROR;
+                }
+
+                // Make sure that the buffer knows how many bytes is in the data array
+                if (cBufferEmptyWrite(rx_buf, HAL_RADIO_FIFO_THRESHOLD) < 0) {
+                    return HAL_RADIO_BUFFER_ERROR;
+                }
+
+                packet_size -= HAL_RADIO_FIFO_THRESHOLD;
+                receiver_state = HAL_RADIO_REC_DATA;
+            } else {
+                // The rest will be managed in payload ready
+                receiver_state = HAL_RADIO_REC_IDLE;
+            }
+        break;
+        default:
+        break;
+    }
+
+
+
+    return HAL_RADIO_SUCCESS;
+}
+
+static int32_t manageDio1Interrupt(halRadio_t *inst) {
+    // Manage the radio mode
+    switch(inst->mode) {
+        case HAL_RADIO_TX:
+           return manageTXFifoThreshold(inst);
+        case HAL_RADIO_RX:
+           return manageRXFifoThreshold(inst);
+        default:
+            break;
+    }
+
+    // Reset the radio mode
+    inst->mode = HAL_RADIO_IDLE;
+
+    // Try to return radio to default mode
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    return HAL_RADIO_SUCCESS;
+}
+
+int32_t halRadioProcess(halRadio_t *inst) {
+    switch (inst->gpio_interrupt) {
+        case 0:
+            // Nothing to do
+             return HAL_GPIO_SUCCESS;
+        case HAL_RADIO_PIN_DIO1:
+            // Reset the interrupt flag
+            inst->gpio_interrupt = 0;
+            return manageDio1Interrupt(inst);
+        case HAL_RADIO_PIN_DIO0:
+            // Reset the interrupt flag
+            inst->gpio_interrupt = 0;
+            return manageDio0Interrupt(inst);
+        default:
+            return HAL_RADIO_GPIO_ERROR;
     }
 
     return HAL_GPIO_SUCCESS;
@@ -258,8 +434,15 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
     gpio_set_dir(HAL_RADIO_PIN_DIO0, GPIO_IN);
     gpio_pull_down(HAL_RADIO_PIN_DIO0);
 
-    // Configure the dio0 callback
+    // Configure DIO1 pin as input with no pull
+    gpio_init(HAL_RADIO_PIN_DIO1);
+    gpio_set_dir(HAL_RADIO_PIN_DIO1, GPIO_IN);
+    gpio_disable_pulls(HAL_RADIO_PIN_DIO0);
+
+    // Configure the dio callbacks
     inst->gpio_dio0.data_cb = dio0GpioCallback;
+    inst->gpio_dio1.data_cb = dio1GpioCallback;
+    inst->gpio_interrupt    = 0;
 
     // Drive CS pin high
     gpio_set_dir(HAL_RADIO_PIN_CS, GPIO_OUT);
@@ -462,6 +645,22 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         return HAL_RADIO_CONFIG_ERROR;
     }
 
+    // TODO verify
+    if (!rfm69_fifo_threshold_set(&inst->rfm, HAL_RADIO_FIFO_THRESHOLD)) {
+        return HAL_RADIO_CONFIG_ERROR;
+    }
+
+    // TODO verify
+    if (!rfm69_payload_length_set(&inst->rfm, HAL_RADIO_MAX_BUFFER_SIZE)) {
+        return HAL_RADIO_CONFIG_ERROR;
+    }
+
+    // Configure dio1 to create an interrupt when the fifo level exceeds the threshold
+    // in either direction
+    if (!rfm69_dio1_config_set(&inst->rfm, RFM69_DIO1_PKT_TX_FIFO_LVL)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
     // Set the radio in default mode
     if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
         return HAL_RADIO_DRIVER_ERROR;
@@ -474,6 +673,16 @@ int32_t halRadioCancelReceive(halRadio_t *inst) {
     // Put radio back to default
     if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
         return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    // Reset the GPIO callback
+    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO0)) != HAL_GPIO_SUCCESS) {
+        return HAL_RADIO_GPIO_ERROR;
+    }
+
+    // Reset the GPIO callback
+    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
+        return HAL_RADIO_GPIO_ERROR;
     }
 
     inst->mode = HAL_RADIO_IDLE;
@@ -498,7 +707,12 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
 
     // Enable gpio interrupt and set callback
     inst->package_callback = interface;
-    if (halGpioEnableIrqCb(&inst->gpio_dio0, HAL_RADIO_PIN_DIO0) != HAL_GPIO_SUCCESS) {
+    if (halGpioEnableIrqCbRisingEdge(&inst->gpio_dio0, HAL_RADIO_PIN_DIO0) != HAL_GPIO_SUCCESS) {
+        return HAL_RADIO_GPIO_ERROR;
+    }
+
+    // Enable gpio callbacks
+    if (halGpioEnableIrqCbRisingEdge(&inst->gpio_dio1, HAL_RADIO_PIN_DIO1) != HAL_GPIO_SUCCESS) {
         return HAL_RADIO_GPIO_ERROR;
     }
 
@@ -581,6 +795,16 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
+    // Reset the GPIO callback
+    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO0)) != HAL_GPIO_SUCCESS) {
+        return HAL_RADIO_GPIO_ERROR;
+    }
+
+    // Reset the GPIO callback
+    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
+        return HAL_RADIO_GPIO_ERROR;
+    }
+
     inst->mode = HAL_RADIO_IDLE;
 
     return HAL_RADIO_SUCCESS;
@@ -625,33 +849,87 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
     // When it is an outgoing packet the address is my address
     inst->active_package.address = inst->config.rx_address;
 
+    // Set the tx power level
+    if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
     // Reset the IRQ registers
     uint8_t buf[2] = {0xFF,0xFF};
     if (!rfm69_write(&inst->rfm, RFM69_REG_IRQ_FLAGS_1, buf, 2)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-    // Write the package to the radio
-    if (!rfm69_write(&inst->rfm, RFM69_REG_FIFO, tx_buffer, inst->current_tx_size)) {
-        return HAL_RADIO_DRIVER_ERROR;
-    }
-	
-    if (cBufferClear(inst->package_callback->pkt_buffer) != C_BUFFER_SUCCESS) {
-        return HAL_RADIO_BUFFER_ERROR;
-    }
+    if (inst->current_tx_size > (RFM69_FIFO_SIZE - HAL_RADIO_PACKET_SIZE_SIZE)) {
+        // Write the package to the radio
+        if (!rfm69_write(&inst->rfm, RFM69_REG_FIFO, tx_buffer, (RFM69_FIFO_SIZE - HAL_RADIO_PACKET_SIZE_SIZE))) {
+            return HAL_RADIO_DRIVER_ERROR;
+        }
 
-    if (inst->mode == HAL_RADIO_TX_IDLE) {
-        return HAL_RADIO_SUCCESS;
-    }
+        // Check if we are allready in tx state
+        if (inst->mode != HAL_RADIO_TX_IDLE) {
+            // Switch to TX mode to send buffer
+            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
+                return HAL_RADIO_DRIVER_ERROR;
+            }
+        }
 
-    // Set the tx power level
-    if (!rfm69_power_level_set(&inst->rfm, inst->config.power_dbm)) {
-        return HAL_RADIO_DRIVER_ERROR;
-    }
+        // Enable gpio fifo callbacks
+        if (halGpioEnableIrqCbFallingEdge(&inst->gpio_dio1, HAL_RADIO_PIN_DIO1) != HAL_GPIO_SUCCESS) {
+            return HAL_RADIO_GPIO_ERROR;
+        }
 
-    // Switch to TX mode to send buffer
-    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
-        return HAL_RADIO_DRIVER_ERROR;
+        inst->current_tx_size -= (RFM69_FIFO_SIZE - HAL_RADIO_PACKET_SIZE_SIZE);
+        tx_buffer += (RFM69_FIFO_SIZE - HAL_RADIO_PACKET_SIZE_SIZE);
+
+        while (inst->current_tx_size > 0) {
+            // Wait for the fifo empty interrupt
+            while (inst->gpio_interrupt != HAL_RADIO_PIN_DIO1) {
+                asm volatile("nop \n nop \n nop \n nop");
+            }
+            // Reset the interrupt
+            inst->gpio_interrupt = 0;
+
+            // Check if there still is more to send than fits in the fifo
+            if (inst->current_tx_size > HAL_RADIO_FIFO_THRESHOLD) {
+                if (!rfm69_write(&inst->rfm, RFM69_REG_FIFO, tx_buffer, HAL_RADIO_FIFO_THRESHOLD)) {
+                    return HAL_RADIO_DRIVER_ERROR;
+                }
+
+                inst->current_tx_size -= HAL_RADIO_FIFO_THRESHOLD;
+                tx_buffer += HAL_RADIO_FIFO_THRESHOLD;
+            } else {
+                // Write the rest of the data
+                if (!rfm69_write(&inst->rfm, RFM69_REG_FIFO, tx_buffer, inst->current_tx_size)) {
+                    return HAL_RADIO_DRIVER_ERROR;
+                }
+
+                // Transfer complete
+                inst->current_tx_size = 0;
+
+                if (cBufferClear(inst->package_callback->pkt_buffer) != C_BUFFER_SUCCESS) {
+                    return HAL_RADIO_BUFFER_ERROR;
+                }
+            }
+        }
+    } else {
+        // Write the package to the radio
+        if (!rfm69_write(&inst->rfm, RFM69_REG_FIFO, tx_buffer, inst->current_tx_size)) {
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+
+        if (cBufferClear(inst->package_callback->pkt_buffer) != C_BUFFER_SUCCESS) {
+            return HAL_RADIO_BUFFER_ERROR;
+        }
+
+        if (inst->mode == HAL_RADIO_TX_IDLE) {
+            return HAL_RADIO_SUCCESS;
+        }
+
+        // Switch to TX mode to send buffer
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
+            return HAL_RADIO_DRIVER_ERROR;
+        }
     }
 
     return HAL_RADIO_SUCCESS;
@@ -695,7 +973,7 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
 
     // Enable gpio callbacks
     inst->package_callback = interface;
-    if (halGpioEnableIrqCb(&inst->gpio_dio0, HAL_RADIO_PIN_DIO0) != HAL_GPIO_SUCCESS) {
+    if (halGpioEnableIrqCbRisingEdge(&inst->gpio_dio0, HAL_RADIO_PIN_DIO0) != HAL_GPIO_SUCCESS) {
         return HAL_RADIO_GPIO_ERROR;
     }
 
@@ -801,7 +1079,7 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
 
 	// Enable gpio callbacks
     inst->package_callback = interface;
-    if (halGpioEnableIrqCb(&inst->gpio_dio0, HAL_RADIO_PIN_DIO0) != HAL_GPIO_SUCCESS) {
+    if (halGpioEnableIrqCbRisingEdge(&inst->gpio_dio0, HAL_RADIO_PIN_DIO0) != HAL_GPIO_SUCCESS) {
         return HAL_RADIO_GPIO_ERROR;
     }
 

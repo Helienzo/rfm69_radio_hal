@@ -72,6 +72,14 @@
 #define HAL_RADIO_PIN_DIO0 (21)
 #endif /* HAL_RADIO_PIN_DIO0 */
 
+#ifndef HAL_RADIO_PIN_DIO1
+#define HAL_RADIO_PIN_DIO1 (15)
+#endif /* HAL_RADIO_PIN_DIO1 */
+
+#ifndef HAL_RADIO_FIFO_THRESHOLD
+#define HAL_RADIO_FIFO_THRESHOLD (32) // The represents 50% of the fifo
+#endif /* HAL_RADIO_FIFO_THRESHOLD */
+
 #ifndef HAL_RADIO_MAX_BUFFER_SIZE
 #define HAL_RADIO_MAX_BUFFER_SIZE (128) // The RFM69 radio actually supports 255
 #endif /* HAL_RADIO_MAX_BUFFER_SIZE */
@@ -170,7 +178,8 @@ typedef struct {
 
     // Gpio interfaces
     halGpioInterface_t gpio_dio0;
-    volatile bool      gpio_interrupt;
+    halGpioInterface_t gpio_dio1;
+    volatile uint8_t   gpio_interrupt;
 
     // Callbacks and radio mode
     // Mode is used to keep track of sending and receiving in NB mode

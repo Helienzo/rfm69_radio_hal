@@ -32,7 +32,7 @@
 
 static void device_error();
 
-uint8_t msg[] = {'H', 'e', 'l', 'l', 'o', '!'};
+uint8_t msg[] = {'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!'};
 
 // HalRadio
 typedef struct {
@@ -170,7 +170,7 @@ int main()
     }
 
     // Init the TX buffer
-    if(cBufferInit(&my_instance.tx_buffer, my_instance.tx_byte_array, RADIO_RX_BUFFER_SIZE) != C_BUFFER_SUCCESS) {
+    if(cBufferInit(&my_instance.tx_buffer, my_instance.tx_byte_array, RADIO_TX_BUFFER_SIZE) != C_BUFFER_SUCCESS) {
         return 1;
     }
 
