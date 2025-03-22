@@ -80,6 +80,10 @@
 #define HAL_RADIO_FIFO_THRESHOLD (32) // The represents 50% of the fifo
 #endif /* HAL_RADIO_FIFO_THRESHOLD */
 
+#ifndef HAL_RADIO_FIFO_FIL_COUNT
+#define HAL_RADIO_FIFO_FIL_COUNT (15) // The represents 50% of the fifo
+#endif /* HAL_RADIO_FIFO_FIL_COUNT */
+
 #ifndef HAL_RADIO_MAX_BUFFER_SIZE
 #define HAL_RADIO_MAX_BUFFER_SIZE (128) // The RFM69 radio actually supports 255
 #endif /* HAL_RADIO_MAX_BUFFER_SIZE */
@@ -174,7 +178,8 @@ typedef struct {
 typedef struct {
     // Radio configuration
     halRadioConfig_t config;
-    uint8_t current_tx_size;
+    uint8_t          current_packet_size;
+    uint8_t          radio_state;
 
     // Gpio interfaces
     halGpioInterface_t gpio_dio0;
@@ -185,7 +190,7 @@ typedef struct {
     // Mode is used to keep track of sending and receiving in NB mode
     halRadioMode_t       mode;
     halRadioInterface_t *package_callback;
-    halRadioPackage_t   active_package;
+    halRadioPackage_t    active_package;
 
     // Hardware driver instance
     rfm69_context_t rfm;
@@ -247,6 +252,8 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
  * Returns: halRadioErr_t
  */
 int32_t halRadioReceivePackageBlocking(halRadio_t *inst, uint32_t time_ms, uint8_t *data, size_t *size);
+
+int32_t halRadioReceivePackageBlockingInterface(halRadio_t *inst, halRadioInterface_t *interface, uint32_t time_ms);
 
 /**
  * Enable package receive in non blocking mode
