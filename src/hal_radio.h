@@ -247,12 +247,20 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
 /**
  * Receive package, try to receive a package during specific time
  * Input: Pointer to instance
+ * Input: timeout time
  * Input: Pointer to data byte array to write to
  * Input: Pointer to data max_size, value will be changed to received packet size, if a packet is received
  * Returns: halRadioErr_t
  */
 int32_t halRadioReceivePackageBlocking(halRadio_t *inst, uint32_t time_ms, uint8_t *data, size_t *size);
 
+/**
+ * Receive package blocking call interface callbacks
+ * Input: Pointer to instance
+ * Input: Pointer to insterface
+ * Input: timeout time
+ * Returns: halRadioErr_t
+ */
 int32_t halRadioReceivePackageBlockingInterface(halRadio_t *inst, halRadioInterface_t *interface, uint32_t time_ms);
 
 /**
