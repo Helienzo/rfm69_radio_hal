@@ -132,15 +132,19 @@ static int32_t managePacketSent(halRadio_t *inst) {
     return HAL_RADIO_SUCCESS;
 }
 
+static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes);
+
 static int32_t managePayloadReady(halRadio_t *inst) {
 
     LOG("PAYLOAD READY INTERRUPT %u\n", inst->current_packet_size);
     bool state = false;
     rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state);
 
+    /*
     uint8_t buf[2] = {0};
     rfm69_read(&inst->rfm, RFM69_REG_IRQ_FLAGS_1, buf, 2);
     LOG("IRQ buf %u %u\n", buf[0], buf[1]);
+    */
 
     // Check if any package was received, and that the interrupt was valid
     if (!state) {
@@ -184,11 +188,14 @@ static int32_t managePayloadReady(halRadio_t *inst) {
         return HAL_RADIO_BUFFER_ERROR;
     }
 
-    // Try to Read remaining data bytes from FIFO
-    if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, inst->current_packet_size)) {
-        return HAL_RADIO_DRIVER_ERROR;
+    int32_t result = HAL_RADIO_SUCCESS;
+    if ((result = byteWiseRead(inst, inst->current_packet_size)) != HAL_RADIO_SUCCESS) {
+        return result;
     }
 
+    inst->current_packet_size = 0;
+
+    /*
     rfm69_read(&inst->rfm, RFM69_REG_IRQ_FLAGS_1, buf, 2);
     LOG("IRQ buf %u %u\n", buf[0], buf[1]);
 
@@ -198,11 +205,7 @@ static int32_t managePayloadReady(halRadio_t *inst) {
     if (!rfm69_write(&inst->rfm, RFM69_REG_IRQ_FLAGS_1, buf, 2)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
-
-    // Make sure that the buffer knows how many bytes is in the data array
-    if (cBufferEmptyWrite(rx_buf, inst->current_packet_size) < 0) {
-        return HAL_RADIO_BUFFER_ERROR;
-    }
+    */
 
     // |SIZE|ADDR|PAYLOAD|, size = sizeof(addr) + sizeof(payload)
     // Get the target address for this package, should be this radio ..
@@ -306,11 +309,49 @@ static int32_t manageTXFifoThreshold(halRadio_t *inst) {
     return HAL_RADIO_SUCCESS;
 }
 
-static uint8_t read_bytes = 0;
+static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
+    cBuffer_t *rx_buf = inst->package_callback->pkt_buffer;
+    uint64_t s_time = time_us_64();
+    uint64_t e_time = 0;
+    int32_t expected_time = halRadioBitRateToDelayUs(inst, HAL_RADIO_BITRATE_150, num_bytes) + halRadioSpiDelayEstimateUs(inst, num_bytes);
+    uint8_t read_bytes = 0;
+    bool    state = false;
+
+    while (read_bytes < num_bytes && e_time < expected_time) {
+        e_time = time_us_64() - s_time;
+        // Get the current write pointer
+        uint8_t * raw_rx_buffer = NULL;
+        if ((raw_rx_buffer = cBufferGetWritePointer(rx_buf)) == NULL){
+            return HAL_RADIO_BUFFER_ERROR;
+        }
+
+        rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_NOT_EMPTY, &state);
+        if (state) {
+            // Try to Read 1 byte
+            if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, 1)) {
+                return HAL_RADIO_DRIVER_ERROR;
+            }
+
+            read_bytes++;
+            LOG_DEBUG("Bytes read %u, total %u, %c\n", read_bytes, inst->current_packet_size, *raw_rx_buffer);
+
+            // Make sure that the buffer knows how many bytes is in the data array
+            if (cBufferEmptyWrite(rx_buf, 1) < 0) {
+                return HAL_RADIO_BUFFER_ERROR;
+            }
+        }
+    }
+
+    if (read_bytes != num_bytes) {
+        return HAL_RADIO_RECEIVE_FAIL;
+    }
+
+    return HAL_RADIO_SUCCESS;
+}
+
+// TODO we need to have a packet RX timeout
 static int32_t manageRXFifoThreshold(halRadio_t *inst) {
     LOG("RX FIFO INTERRUPT\n");
-
-    //sleep_us(200);
     int32_t result = HAL_RADIO_SUCCESS;
 
     // Get the buffer pointer
@@ -318,7 +359,6 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
 
     switch (inst->radio_state) {
         case HAL_RADIO_REC_IDLE:
-            read_bytes = 0;
             // Clear the buffer to make room for a new package
             if (cBufferClear(rx_buf) < 0) {
                 return HAL_RADIO_BUFFER_ERROR;
@@ -338,34 +378,21 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
             // SHould we add a -1 here?
             if (inst->current_packet_size > RFM69_FIFO_SIZE) {
                 LOG("Large packet transfer 1st %u\n", inst->current_packet_size);
-                read_bytes  += HAL_RADIO_FIFO_FIL_COUNT;
-                LOG("Bytes in fifo: %u to read %u\n", HAL_RADIO_FIFO_THRESHOLD, read_bytes );
 
-                // Get the current write pointer
-                uint8_t * raw_rx_buffer = NULL;
-                if ((raw_rx_buffer = cBufferGetWritePointer(rx_buf)) == NULL){
-                    return HAL_RADIO_BUFFER_ERROR;
-                }
-                LOG("Buffer pointer %u\n", raw_rx_buffer);
-
-                // Try to Read remaining data bytes from FIFO
-                if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, HAL_RADIO_FIFO_FIL_COUNT)) {
-                    return HAL_RADIO_DRIVER_ERROR;
+                // Try to Read remaining data bytes from FIFO, keep in mind that we have allready read 1 byte to get the size
+                if ((result = byteWiseRead(inst, HAL_RADIO_FIFO_THRESHOLD - 1)) != HAL_RADIO_SUCCESS) {
+                    LOG("Result 1 %i\n", result);
+                    return result;
                 }
 
-                // Make sure that the buffer knows how many bytes is in the data array
-                if (cBufferEmptyWrite(rx_buf, HAL_RADIO_FIFO_FIL_COUNT) < 0) {
-                    return HAL_RADIO_BUFFER_ERROR;
-                }
-
-                inst->current_packet_size -= HAL_RADIO_FIFO_FIL_COUNT;
+                inst->current_packet_size -= (HAL_RADIO_FIFO_THRESHOLD - 1);
                 // Check if we will get another interrupt
                 if (inst->current_packet_size > HAL_RADIO_FIFO_THRESHOLD) {
                     // There will be another interrupt with data
                     inst->radio_state = HAL_RADIO_REC_DATA;
                 } else {
                     // The next interrupt will be a paylodReady
-                    LOG("End state 0 read %u rem %u\n", read_bytes, inst->current_packet_size);
+                    LOG_DEBUG("End state 0 remaining %u\n", inst->current_packet_size);
                     inst->radio_state = HAL_RADIO_REC_END;
 
                     // Reset the GPIO callback, to not trigger when reading data from fifo
@@ -375,7 +402,7 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
                 }
             } else {
                 // This will just trigger a regular Payload Ready
-                LOG("End state 1 read %u rem %u\n", read_bytes, inst->current_packet_size);
+                LOG_DEBUG("End state 1 remaining %u\n", inst->current_packet_size);
                 inst->radio_state = HAL_RADIO_REC_END;
 
                 // Reset the GPIO callback, to not trigger when reading data from fifo
@@ -385,83 +412,23 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
             }
         break;
         case HAL_RADIO_REC_DATA:
-            // Check how much data that remains to be received
-            // we know that at least HAL_RADIO_FIFO_THRESHOLD bytes is in the fifo
-            // If we read HAL_RADIO_FIFO_FIL_COUNT from the buffer, will we get another interrupt?
+            LOG_DEBUG("Large packet transfer rest %u\n", inst->current_packet_size);
+
+            // Try to Read data bytes from FIFO
+            if ((result = byteWiseRead(inst, HAL_RADIO_FIFO_THRESHOLD)) != HAL_RADIO_SUCCESS) {
+                LOG("Result 2 %i\n", result);
+                return result;
+            }
+
+            inst->current_packet_size -= HAL_RADIO_FIFO_THRESHOLD;
+
+            // Check if we will get another interrupt
             if (inst->current_packet_size > HAL_RADIO_FIFO_THRESHOLD) {
-                LOG("Large packet transfer rest %u\n", inst->current_packet_size);
-
-                read_bytes  += HAL_RADIO_FIFO_FIL_COUNT;
-                LOG("Bytes in fifo: %u to read %u\n", HAL_RADIO_FIFO_THRESHOLD, read_bytes );
-
-                // Get the current write pointer
-                uint8_t * raw_rx_buffer = NULL;
-                if ((raw_rx_buffer = cBufferGetWritePointer(rx_buf)) == NULL){
-                    return HAL_RADIO_BUFFER_ERROR;
-                }
-                LOG("Buffer pointer %u\n", raw_rx_buffer);
-
-                // Try to Read remaining data bytes from FIFO
-                if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, HAL_RADIO_FIFO_FIL_COUNT)) {
-                    return HAL_RADIO_DRIVER_ERROR;
-                }
-
-                // Make sure that the buffer knows how many bytes is in the data array
-                if (cBufferEmptyWrite(rx_buf, HAL_RADIO_FIFO_FIL_COUNT) < 0) {
-                    return HAL_RADIO_BUFFER_ERROR;
-                }
-
-                inst->current_packet_size -= HAL_RADIO_FIFO_FIL_COUNT;
-
-                // Check if we will get another interrupt
-                // TODO I think this check might be redundant
-                if (inst->current_packet_size > HAL_RADIO_FIFO_THRESHOLD) {
-                    // There will be another interrupt with data
-                    inst->radio_state = HAL_RADIO_REC_DATA;
-                } else {
-
-                LOG("End state 2 read %u rem %u\n", read_bytes, inst->current_packet_size);
-                    // The next interrupt will be a paylodReady
-                    inst->radio_state = HAL_RADIO_REC_END;
-
-                    // Get the current write pointer
-                    uint8_t * raw_rx_buffer = NULL;
-                    if ((raw_rx_buffer = cBufferGetWritePointer(rx_buf)) == NULL){
-                        return HAL_RADIO_BUFFER_ERROR;
-                    }
-                    LOG("Buffer pointer %u\n", raw_rx_buffer);
-
-                    // Try to Read remaining data bytes from FIFO
-                    if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, HAL_RADIO_FIFO_FIL_COUNT)) {
-                        return HAL_RADIO_DRIVER_ERROR;
-                    }
-
-                    // Make sure that the buffer knows how many bytes is in the data array
-                    if (cBufferEmptyWrite(rx_buf, HAL_RADIO_FIFO_FIL_COUNT) < 0) {
-                        return HAL_RADIO_BUFFER_ERROR;
-                    }
-
-                    inst->current_packet_size -= HAL_RADIO_FIFO_FIL_COUNT;
-                    read_bytes += HAL_RADIO_FIFO_FIL_COUNT;
-
-
-                    uint8_t *tx_buffer = NULL;
-                    if ((tx_buffer = cBufferGetReadPointer(rx_buf)) == NULL) {
-                        return HAL_RADIO_BUFFER_ERROR;
-                    }
-                    for (int i = 0; i < read_bytes; i ++) {
-                        LOG("%c", *(tx_buffer+i));
-                    }
-                    LOG("\n");
-
-                    // Reset the GPIO callback, to not trigger when reading data from fifo
-                    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
-                        return HAL_RADIO_GPIO_ERROR;
-                    }
-                }
+                // There will be another interrupt with data
+                inst->radio_state = HAL_RADIO_REC_DATA;
             } else {
-                LOG("End state 3 read %u rem %u\n", read_bytes, inst->current_packet_size);
-                // This will just trigger a regular Payload Ready
+                LOG_DEBUG("End state 2 remaining %u\n", inst->current_packet_size);
+                // The next interrupt will be a paylodReady
                 inst->radio_state = HAL_RADIO_REC_END;
 
                 // Reset the GPIO callback, to not trigger when reading data from fifo
@@ -469,12 +436,18 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
                     return HAL_RADIO_GPIO_ERROR;
                 }
             }
-        break;
+            break;
         default:
+        // What should we do here?
         break;
     }
 
-
+    bool state = false;
+    rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state);
+    if (state) {
+        inst->gpio_interrupt = 0;
+        return managePayloadReady(inst);
+    }
 
     return HAL_RADIO_SUCCESS;
 }
@@ -931,7 +904,7 @@ int32_t halRadioReceivePackageBlockingInterface(halRadio_t *inst, halRadioInterf
                 return HAL_RADIO_BUFFER_ERROR;
             }
 
-            rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_LEVEL, &state);
+            rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_NOT_EMPTY, &state);
             if (state) {
                 // Try to Read 1 byte
                 if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, 1)) {
