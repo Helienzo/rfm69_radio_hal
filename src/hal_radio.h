@@ -80,10 +80,6 @@
 #define HAL_RADIO_FIFO_THRESHOLD (32) // The represents 50% of the fifo
 #endif /* HAL_RADIO_FIFO_THRESHOLD */
 
-#ifndef HAL_RADIO_FIFO_FIL_COUNT
-#define HAL_RADIO_FIFO_FIL_COUNT (15) // The represents 50% of the fifo
-#endif /* HAL_RADIO_FIFO_FIL_COUNT */
-
 #ifndef HAL_RADIO_MAX_BUFFER_SIZE
 #define HAL_RADIO_MAX_BUFFER_SIZE (128) // The RFM69 radio actually supports 255
 #endif /* HAL_RADIO_MAX_BUFFER_SIZE */
