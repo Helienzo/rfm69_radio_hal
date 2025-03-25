@@ -320,26 +320,21 @@ static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
 
     while (read_bytes < num_bytes && e_time < expected_time) {
         e_time = time_us_64() - s_time;
-        // Get the current write pointer
-        uint8_t * raw_rx_buffer = NULL;
-        if ((raw_rx_buffer = cBufferGetWritePointer(rx_buf)) == NULL){
-            return HAL_RADIO_BUFFER_ERROR;
-        }
 
         rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_NOT_EMPTY, &state);
         if (state) {
+            uint8_t next_byte = 0;
             // Try to Read 1 byte
-            if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, 1)) {
+            if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, &next_byte, 1)) {
                 return HAL_RADIO_DRIVER_ERROR;
             }
 
-            read_bytes++;
-            LOG_DEBUG("Bytes read %u, total %u, %c\n", read_bytes, inst->current_packet_size, *raw_rx_buffer);
-
-            // Make sure that the buffer knows how many bytes is in the data array
-            if (cBufferEmptyWrite(rx_buf, 1) < 0) {
+            if (cBufferAppendByte(rx_buf, next_byte) != 1) {
                 return HAL_RADIO_BUFFER_ERROR;
             }
+
+            read_bytes++;
+            LOG_DEBUG("Bytes read %u, total %u, %c\n", read_bytes, inst->current_packet_size, next_byte);
         }
     }
 
