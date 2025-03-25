@@ -42,6 +42,7 @@ typedef enum {
     HAL_RADIO_REC_IDLE,
     HAL_RADIO_REC_DATA,
     HAL_RADIO_REC_END,
+    HAL_RADIO_TX_DATA,
 } halRadioReceiveState_t;
 
 // Function declarations
@@ -307,6 +308,38 @@ static int32_t manageDio0Interrupt(halRadio_t *inst) {
 
 static int32_t manageTXFifoThreshold(halRadio_t *inst) {
     LOG("TX FIFO INTERRUPT\n");
+    // Reset the interrupt, we only end up here if it is a non blocking tx
+    inst->gpio_interrupt = 0;
+
+    switch (inst->radio_state) {
+        case HAL_RADIO_TX_DATA:
+
+            // Check if there still is more to send than fits in the fifo
+            if (inst->current_packet_size > HAL_RADIO_FIFO_THRESHOLD) {
+                if (byteWiseWrite(inst, inst->package_callback->pkt_buffer, HAL_RADIO_FIFO_THRESHOLD) != HAL_RADIO_SUCCESS) {
+                    return HAL_RADIO_SEND_FAIL;
+                }
+
+                inst->current_packet_size -= HAL_RADIO_FIFO_THRESHOLD;
+            } else {
+
+                // Write the rest of the data
+                if (byteWiseWrite(inst, inst->package_callback->pkt_buffer, inst->current_packet_size) != HAL_RADIO_SUCCESS) {
+                    return HAL_RADIO_SEND_FAIL;
+                }
+
+                // Transfer complete
+                inst->current_packet_size = 0;
+
+                // Reset the state
+                inst->radio_state = HAL_RADIO_REC_IDLE;
+            }
+        break;
+    
+        default:
+            break;
+    }
+
     return HAL_RADIO_SUCCESS;
 }
 
@@ -1151,7 +1184,7 @@ static int32_t byteWiseWrite(halRadio_t *inst, cBuffer_t *tx_buf, uint8_t num_by
     return HAL_RADIO_SUCCESS;
 }
 
-static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uint8_t address) {
+static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uint8_t address, bool not_blocking) {
 	// Variable packet format pg.52 of datasheet, the size of size byte should not be included in size
 
     // Get the current size of the buffer contents
@@ -1201,14 +1234,15 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-    if (inst->current_packet_size > (RFM69_FIFO_SIZE)) {
+    if (inst->current_packet_size > RFM69_FIFO_SIZE) {
         // Write the package to the radio
         if (!rfm69_write(&inst->rfm, RFM69_REG_FIFO, tx_buffer, (RFM69_FIFO_SIZE))) {
             return HAL_RADIO_DRIVER_ERROR;
         }
 
+       LOG_DEBUG("Writing %u bytes\n", RFM69_FIFO_SIZE);
        // Update the buffer
-       if (cBufferEmptyRead(pkt_buffer, (RFM69_FIFO_SIZE)) != (RFM69_FIFO_SIZE)) {
+       if (cBufferEmptyRead(pkt_buffer, RFM69_FIFO_SIZE) != RFM69_FIFO_SIZE) {
            return HAL_RADIO_BUFFER_ERROR;
        }
 
@@ -1220,30 +1254,38 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
             }
         }
 
-        // Enable gpio fifo callbacks
-        if (halGpioEnableIrqCbFallingEdge(&inst->gpio_dio1, HAL_RADIO_PIN_DIO1) != HAL_GPIO_SUCCESS) {
-            return HAL_RADIO_GPIO_ERROR;
+        inst->current_packet_size -= RFM69_FIFO_SIZE;
+
+        if (not_blocking) {
+            // Enable gpio fifo callbacks
+            if (halGpioEnableIrqCbFallingEdge(&inst->gpio_dio1, HAL_RADIO_PIN_DIO1) != HAL_GPIO_SUCCESS) {
+                return HAL_RADIO_GPIO_ERROR;
+            }
+
+            // The rest is managed in the interrupt handler
+            inst->radio_state = HAL_RADIO_TX_DATA;
+            return HAL_RADIO_SUCCESS;
         }
 
-        inst->current_packet_size -= (RFM69_FIFO_SIZE);
-
         while (inst->current_packet_size > 0) {
-            // Wait for the fifo empty interrupt
-            while (inst->gpio_interrupt != HAL_RADIO_PIN_DIO1) {
-                asm volatile("nop \n nop \n nop \n nop");
+            bool state = true;
+            // Wait for the fifo level interrupt going under the threshold
+            while (state) {
+                if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_LEVEL, &state)) {
+                    return HAL_RADIO_DRIVER_ERROR;
+                }
             }
-            // Reset the interrupt
-            inst->gpio_interrupt = 0;
 
             // Check if there still is more to send than fits in the fifo
             if (inst->current_packet_size > HAL_RADIO_FIFO_THRESHOLD) {
+                LOG_DEBUG("Writing %u bytes\n", HAL_RADIO_FIFO_THRESHOLD);
                 if (byteWiseWrite(inst, pkt_buffer, HAL_RADIO_FIFO_THRESHOLD) != HAL_RADIO_SUCCESS) {
                     return HAL_RADIO_SEND_FAIL;
                 }
 
                 inst->current_packet_size -= HAL_RADIO_FIFO_THRESHOLD;
             } else {
-
+                LOG_DEBUG("Writing %u bytes\n", inst->current_packet_size);
                 // Write the rest of the data
                 if (byteWiseWrite(inst, pkt_buffer, inst->current_packet_size) != HAL_RADIO_SUCCESS) {
                     return HAL_RADIO_SEND_FAIL;
@@ -1328,7 +1370,7 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
     }
 
     int32_t res;
-    if ((res = writeDataAndEnableTx(inst, interface->pkt_buffer, address)) != HAL_RADIO_SUCCESS) {
+    if ((res = writeDataAndEnableTx(inst, interface->pkt_buffer, address, true)) != HAL_RADIO_SUCCESS) {
         return res;
     }
 
@@ -1441,12 +1483,15 @@ int32_t halRadioSendPackageBlocking(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
 
     // Check package size validity
     int32_t free_space = cBufferAvailableForWrite(pkt_buffer);
-    if (free_space < 0 || HAL_RADIO_PACKET_OVERHEAD < free_space) {
+    if (free_space < 0 || free_space < HAL_RADIO_PACKET_OVERHEAD) {
         return HAL_RADIO_INVALID_SIZE;
     }
 
+    // Get the number of bytes to send
+    int32_t to_send = cBufferAvailableForRead(pkt_buffer);
+
     int32_t res;
-    if ((res = writeDataAndEnableTx(inst, pkt_buffer, address)) != HAL_RADIO_SUCCESS) {
+    if ((res = writeDataAndEnableTx(inst, pkt_buffer, address, false)) != HAL_RADIO_SUCCESS) {
         return res;
     }
 
@@ -1458,11 +1503,11 @@ int32_t halRadioSendPackageBlocking(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
     uint32_t counter = 0; // Set a maximum timout for sending
     while (!state && counter < 10) {
         rfm69_read(&inst->rfm, RFM69_REG_IRQ_FLAGS_2, &buf, 1);
-        LOG("IRQ2: %02X\n", buf);
+        LOG_DEBUG("IRQ2: %02X\n", buf);
         rfm69_read(&inst->rfm, RFM69_REG_IRQ_FLAGS_1, &buf, 1);
-        LOG("IRQ1: %02X\n", buf);
+        LOG_DEBUG("IRQ1: %02X\n", buf);
         rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PACKET_SENT, &state);
-
+        sleep_ms(1);
         counter++;
     }
 
@@ -1473,7 +1518,7 @@ int32_t halRadioSendPackageBlocking(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-    LOG("%u bytes sent!\n", free_space);
+    LOG_DEBUG("%u bytes sent!\n", to_send);
 
     if (state == 0) {
         return HAL_RADIO_SEND_FAIL;
