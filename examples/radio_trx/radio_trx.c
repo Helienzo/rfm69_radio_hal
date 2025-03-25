@@ -32,7 +32,12 @@
 
 static void device_error();
 
-//uint8_t msg[100] = {0};//'1', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', '4', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', '3', 'H','e', 'l', 'l', 'o','5', 'W', 'o', 'r', 'l', 'd', '!','2'};
+/* Small package that can be sent on a single fifo write */
+/*
+uint8_t msg[] = {'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!', ' ', 'H','e', 'l', 'l', 'o',' ', 'W', 'o', 'r', 'l', 'd', '!'};
+*/
+
+/* Large packet that requires on the fly fifo fill */
 static uint8_t msg[] = {
     '1', ',', ' ', '2', ',', ' ', '3', ',', ' ', '4', ',', ' ', '5', ',', ' ', 
     '6', ',', ' ', '7', ',', ' ', '8', ',', ' ', '9', ',', ' ', '1', '0', ',', ' ', 
@@ -91,12 +96,29 @@ void buttonEventCb(picoBootSelButtonInterface_t *interface, picoBootSelButtonEve
 
     // Set the interface buffer to the tx_buffer
     inst->hal_interface.pkt_buffer = &inst->tx_buffer;
+    /* Non blocking write */
     res = halRadioSendPackageNB(&inst->hal_radio_inst, &inst->hal_interface, RADIO_BROADCAST_ADDR); // Use TARGET_ADDR to target specific radios
-
     if (res != HAL_RADIO_SUCCESS) {
         LOG("RADIO SEND FAILED! %i\n", res);
         device_error();
     }
+
+    /* Blocking Write
+    res = halRadioSendPackageBlocking(&inst->hal_radio_inst, &inst->tx_buffer, RADIO_BROADCAST_ADDR);
+    if (res != HAL_RADIO_SUCCESS) {
+        LOG("RADIO SEND FAILED! %i\n", res);
+        device_error();
+    }
+
+    // Set the radio to RX
+    inst->hal_interface.pkt_buffer = &inst->rx_buffer;
+    res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface);
+
+    if (res != HAL_RADIO_SUCCESS) {
+        LOG("RADIO RX FAILED! %i\n", res);
+        device_error();
+    }
+     */
 }
 
 static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage_t* hal_packet) {
@@ -185,10 +207,16 @@ int main()
     my_instance.hal_interface.pkg_sent_cb = halRadioSentCb;
     my_instance.hal_interface.pkt_buffer = &my_instance.rx_buffer;
 
-    // Set the radio to RX
-    my_instance.hal_interface.pkt_buffer = &my_instance.rx_buffer;
-    res = halRadioReceivePackageNB(&my_instance.hal_radio_inst, &my_instance.hal_interface);
+    /* Blocking Recive
+    while (true) {
+        res = halRadioReceivePackageBlockingInterface(&my_instance.hal_radio_inst, &my_instance.hal_interface, 0xFFFFFFFF);
+        LOG("Receive Result %i\n", res);
+    }
+    */
 
+    /* Non blocking receive */
+    // Set the radio to RX
+    res = halRadioReceivePackageNB(&my_instance.hal_radio_inst, &my_instance.hal_interface);
     if (res != HAL_RADIO_SUCCESS) {
         LOG("RADIO RX FAILED! %i\n", res);
         device_error();

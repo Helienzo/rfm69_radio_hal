@@ -51,7 +51,7 @@ FetchContent_MakeAvailable(c_buffer)
 FetchContent_Declare(
   pi_pico_gpio_hal
   GIT_REPOSITORY https://github.com/Helienzo/pi_pico_gpio_hal.git
-  GIT_TAG        feature/build_and_test
+  GIT_TAG        main
 )
 FetchContent_MakeAvailable(pi_pico_gpio_hal)
 
@@ -74,7 +74,7 @@ pico_set_program_version(radio_trx "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(radio_trx 0)
-pico_enable_stdio_usb(radio_trx 0)
+pico_enable_stdio_usb(radio_trx 1)
 
 # Add the standard library to the build
 target_link_libraries(radio_trx
