@@ -77,7 +77,7 @@
 #endif /* HAL_RADIO_PIN_DIO1 */
 
 #ifndef HAL_RADIO_FIFO_THRESHOLD
-#define HAL_RADIO_FIFO_THRESHOLD (32) // The represents 50% of the fifo
+#define HAL_RADIO_FIFO_THRESHOLD (32) // Default is one less than 50% of fifo
 #endif /* HAL_RADIO_FIFO_THRESHOLD */
 
 #ifndef HAL_RADIO_MAX_BUFFER_SIZE
