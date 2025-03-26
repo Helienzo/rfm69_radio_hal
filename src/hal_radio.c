@@ -36,6 +36,10 @@
 #define LOG_DEBUG(f_, ...)
 #endif
 
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 #define PACKET_RX_POLL_TIME_MS 10
 
 typedef enum {
@@ -46,7 +50,25 @@ typedef enum {
 } halRadioReceiveState_t;
 
 // Function declarations
+
+/**
+ * The byteWiseRead function is needed due to a quirk in the RFM69 chip.
+ * If the fifo needs to be read on-the-fly duinging an active RF transmission,
+ * which is the case when the packet is larger than the FIFO size we are forced
+ * to read one byte at a time over the SPI. One can speculate that this is
+ * needed for the chip to have time to populate the fifo with new incomming data.
+ * Perhaps it cannot do that and at the same time clock out a long stream of bytes.
+ */
 static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes);
+
+/**
+ * The byteWiseWrite function is needed due to a quirk in the RFM69 chip.
+ * If the fifo needs to be written on-the-fly duinging an active RF transmission,
+ * which is the case when the packet is larger than the FIFO size we are forced
+ * to write one byte at a time over the SPI. One can speculate that this is
+ * needed for the chip to have time to pull bytes from the fifo. Perhaps it cannot
+ * do that and at the same time clock in a long stream of bytes over SPI.
+ */
 static int32_t byteWiseWrite(halRadio_t *inst, cBuffer_t *tx_buf, uint8_t num_bytes);
 
 // Constant for calculating time used by the spi to send X bytes
@@ -312,8 +334,6 @@ static int32_t manageDio0Interrupt(halRadio_t *inst) {
 
 static int32_t manageTXFifoThreshold(halRadio_t *inst) {
     LOG_DEBUG("TX FIFO INTERRUPT\n");
-    // Reset the interrupt, we only end up here if it is a non blocking tx
-    inst->gpio_interrupt = 0;
 
     switch (inst->radio_state) {
         case HAL_RADIO_TX_DATA:
@@ -352,7 +372,7 @@ static int32_t manageTXFifoThreshold(halRadio_t *inst) {
 
                 // If so is the case trigger the sent function directly from here
                 if (state) {
-                    // Reset the flag
+                    // Reset the flag, as this would mean that the packedt sent interrupt has fired while we processed the TX fifo
                     inst->gpio_interrupt = 0;
                     return managePacketSent(inst);
                 }
@@ -369,7 +389,7 @@ static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
     cBuffer_t *rx_buf = inst->package_callback->pkt_buffer;
     uint64_t s_time = time_us_64();
     uint64_t e_time = 0;
-    int32_t expected_time = halRadioBitRateToDelayUs(inst, HAL_RADIO_BITRATE_150, num_bytes) + halRadioSpiDelayEstimateUs(inst, num_bytes);
+    int32_t expected_time = halRadioBitRateToDelayUs(inst, inst->config.bitrate, num_bytes) + halRadioSpiDelayEstimateUs(inst, num_bytes);
     uint8_t read_bytes = 0;
     bool    state = false;
 
@@ -400,7 +420,6 @@ static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
     return HAL_RADIO_SUCCESS;
 }
 
-// TODO we need to have a packet RX timeout
 static int32_t manageRXFifoThreshold(halRadio_t *inst) {
     LOG_DEBUG("RX FIFO INTERRUPT\n");
     int32_t result = HAL_RADIO_SUCCESS;
@@ -495,6 +514,7 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
     bool state = false;
     rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state);
     if (state) {
+        // Reset the flag, as this would mean that the payload ready interrupt has fired while we processed the RX fifo
         inst->gpio_interrupt = 0;
         return managePayloadReady(inst);
     }
@@ -1009,7 +1029,7 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
         return HAL_RADIO_INVALID_SIZE;
     }
 
-    int32_t expected_time = halRadioBitRateToDelayUs(inst, HAL_RADIO_BITRATE_150, inst->current_packet_size) + halRadioSpiDelayEstimateUs(inst, inst->current_packet_size);
+    int32_t expected_time = halRadioBitRateToDelayUs(inst, inst->config.bitrate, inst->current_packet_size) + halRadioSpiDelayEstimateUs(inst, inst->current_packet_size);
     uint64_t s_time = time_us_64();
     uint64_t e_time = 0;
 
@@ -1132,7 +1152,7 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
 static int32_t byteWiseWrite(halRadio_t *inst, cBuffer_t *tx_buf, uint8_t num_bytes) {
     uint64_t s_time = time_us_64();
     uint64_t e_time = 0;
-    int32_t expected_time = halRadioBitRateToDelayUs(inst, HAL_RADIO_BITRATE_150, num_bytes) + halRadioSpiDelayEstimateUs(inst, num_bytes);
+    int32_t expected_time = halRadioBitRateToDelayUs(inst, inst->config.bitrate, num_bytes) + halRadioSpiDelayEstimateUs(inst, num_bytes);
     uint8_t writen_bytes = 0;
     bool    state = false;
 
@@ -1331,6 +1351,7 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
     // Check package size validity
     int32_t free_space = cBufferAvailableForWrite(interface->pkt_buffer);
     if (free_space < 0 || free_space < HAL_RADIO_PACKET_OVERHEAD) {
+        LOG("Invalid size %u\n", free_space);
         return HAL_RADIO_INVALID_SIZE;
     }
 
@@ -1576,6 +1597,12 @@ int32_t halRadioSpiDelayEstimateUs(halRadio_t *inst, uint8_t num_bytes) {
 
     // Add the overhead created by the radio and hal layer
     num_bytes += RFM69_DEFAULT_SYNC_WORD_LEN + RFM69_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD;
+
+    // The maximum number of bytes to ever be consecutively read/written is RFM69_FIFO_SIZE
+    // If the packet send or received is larger than RFM69_FIFO_SIZE the read/write will be done in the background
+    // during the packet transmission. This function aims to estimate how much time in between packets is needed
+    // due to SPI tranfers.
+    num_bytes = MIN(num_bytes, RFM69_FIFO_SIZE);
 
     int32_t time_us = (int32_t)num_bytes*kHalRadioSpiUsPerByte;
 
