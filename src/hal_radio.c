@@ -192,9 +192,13 @@ static int32_t managePayloadReady(halRadio_t *inst) {
         return HAL_RADIO_BUFFER_ERROR;
     }
 
-    int32_t result = HAL_RADIO_SUCCESS;
-    if ((result = byteWiseRead(inst, inst->current_packet_size)) != HAL_RADIO_SUCCESS) {
-        return result;
+    // Try to Read the rest of the payload
+    if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, inst->current_packet_size)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    if (cBufferEmptyWrite(rx_buf, inst->current_packet_size) < C_BUFFER_SUCCESS) {
+        return HAL_RADIO_BUFFER_ERROR;
     }
 
     inst->current_packet_size = 0;
