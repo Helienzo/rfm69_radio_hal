@@ -51,7 +51,7 @@ FetchContent_MakeAvailable(c_buffer)
 FetchContent_Declare(
   pi_pico_gpio_hal
   GIT_REPOSITORY https://github.com/Helienzo/pi_pico_gpio_hal.git
-  GIT_TAG        main
+  GIT_TAG        feature/add_get_helpers
 )
 FetchContent_MakeAvailable(pi_pico_gpio_hal)
 

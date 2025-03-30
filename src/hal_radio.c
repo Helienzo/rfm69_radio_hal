@@ -793,20 +793,45 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         return HAL_RADIO_CONFIG_ERROR;
     }
 
-    // TODO verify
     if (!rfm69_fifo_threshold_set(&inst->rfm, HAL_RADIO_FIFO_THRESHOLD)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    uint8_t thresh_verification = 0;
+    if (!rfm69_fifo_threshold_get(&inst->rfm, &thresh_verification)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    if (thresh_verification != HAL_RADIO_FIFO_THRESHOLD) {
         return HAL_RADIO_CONFIG_ERROR;
     }
 
-    // TODO verify
     // We dont want the crc to autoclear becaus we want an interrupt to fire when the packet is done
-    // No matter if it is correct or not
+    // no matter if it is correct or not, crc failed is explicitly managed.
     if (!rfm69_crc_autoclear_set(&inst->rfm, false)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    bool autoclear_set = true;
+    if (!rfm69_crc_autoclear_get(&inst->rfm, &autoclear_set)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    if (autoclear_set) {
         return HAL_RADIO_CONFIG_ERROR;
     }
 
     // TODO verify
     if (!rfm69_payload_length_set(&inst->rfm, HAL_RADIO_MAX_BUFFER_SIZE)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    uint8_t payload_len = 0;
+    if (!rfm69_payload_length_get(&inst->rfm, &payload_len)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    if (payload_len != HAL_RADIO_MAX_BUFFER_SIZE) {
         return HAL_RADIO_CONFIG_ERROR;
     }
 
