@@ -28,7 +28,7 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(radio_trx C CXX ASM)
+project(radio_rx_blocking C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
@@ -67,26 +67,26 @@ add_subdirectory(${MODULE_PATH} libs/rfm69_radio_hal)
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(radio_trx radio_trx.c)
+add_executable(radio_rx_blocking radio_rx_blocking.c)
 
-pico_set_program_name(radio_trx "radio_trx")
-pico_set_program_version(radio_trx "0.1")
+pico_set_program_name(radio_rx_blocking "radio_rx_blocking")
+pico_set_program_version(radio_rx_blocking "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(radio_trx 0)
-pico_enable_stdio_usb(radio_trx 1)
+pico_enable_stdio_uart(radio_rx_blocking 0)
+pico_enable_stdio_usb(radio_rx_blocking 1)
 
 # Add the standard library to the build
-target_link_libraries(radio_trx
+target_link_libraries(radio_rx_blocking
         pico_stdlib)
 
 # Add the standard include files to the build
-target_include_directories(radio_trx PRIVATE
+target_include_directories(radio_rx_blocking PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
 # Add any user requested libraries
-target_link_libraries(radio_trx 
+target_link_libraries(radio_rx_blocking 
         hardware_spi
         rp2x_rfm69_lib
         c_buffer
@@ -95,5 +95,5 @@ target_link_libraries(radio_trx
         pico_bootsel_button
         )
 
-pico_add_extra_outputs(radio_trx)
+pico_add_extra_outputs(radio_rx_blocking)
 

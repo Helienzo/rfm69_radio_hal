@@ -7,12 +7,8 @@
 
 /*
  This example can be flashed to two PICO's with a RFM69 radio.
- Both radios will be in RX mode waiting for a packets.
  Send a packet by pressing the pico bootsel button. This switches the radio to TX mode, sends the
- packet and then returns to RX mode.
-
- The radio is configured in interrupt mode to notify about send complete, and packet available.
- how ever, the callbacks are not in ISR context, they are called through the proccess function.
+ packet and then returns to idle mode.
 
  Note that the example uses the broadcast address to enable flashing without changing addresses.
 */
@@ -50,11 +46,9 @@ static uint8_t msg[] = {
 // HalRadio
 typedef struct {
     halRadio_t          hal_radio_inst;
-    halRadioInterface_t hal_interface;
-    uint8_t             rx_byte_array[RADIO_RX_BUFFER_SIZE];
-    cBuffer_t           rx_buffer;
     uint8_t             tx_byte_array[RADIO_TX_BUFFER_SIZE];
     cBuffer_t           tx_buffer;
+
     // Button management
     picoBootSelButton_t          boot_button;
     picoBootSelButtonInterface_t btn_interface;
@@ -88,79 +82,12 @@ void buttonEventCb(picoBootSelButtonInterface_t *interface, picoBootSelButtonEve
         device_error();
     }
 
-    res = halRadioCancelReceive(&inst->hal_radio_inst);
-    if (res != HAL_RADIO_SUCCESS) {
-        LOG("RADIO CANCEL RECEIVE FAILED! %i\n", res);
-        device_error();
-    }
-
-    // Set the interface buffer to the tx_buffer
-    inst->hal_interface.pkt_buffer = &inst->tx_buffer;
-    /* Non blocking write */
-    res = halRadioSendPackageNB(&inst->hal_radio_inst, &inst->hal_interface, RADIO_BROADCAST_ADDR); // Use TARGET_ADDR to target specific radios
-    if (res != HAL_RADIO_SUCCESS) {
-        LOG("RADIO SEND FAILED! %i\n", res);
-        device_error();
-    }
-
-    /* Blocking Write
+    /* Blocking Write */
     res = halRadioSendPackageBlocking(&inst->hal_radio_inst, &inst->tx_buffer, RADIO_BROADCAST_ADDR);
     if (res != HAL_RADIO_SUCCESS) {
         LOG("RADIO SEND FAILED! %i\n", res);
         device_error();
     }
-
-    // Set the radio to RX
-    inst->hal_interface.pkt_buffer = &inst->rx_buffer;
-    res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface);
-
-    if (res != HAL_RADIO_SUCCESS) {
-        LOG("RADIO RX FAILED! %i\n", res);
-        device_error();
-    }
-     */
-}
-
-static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage_t* hal_packet) {
-    myInstance_t * inst = CONTAINER_OF(interface, myInstance_t, hal_interface);
-
-    inst->test_led_state = !inst->test_led_state;
-    pico_set_led(inst->test_led_state);
-
-    int32_t result = cBufferAvailableForRead(interface->pkt_buffer);
-
-    if (result < 0) {
-        LOG("Invalid packet received %i.\n", result);
-        return result;
-    }
-
-    LOG("%i bytes received.\n", result);
-
-    // Print out payload
-    LOG("Payload: ");
-    for (int32_t i = 0; i < result; i++) {
-        LOG("%c", cBufferReadByte(interface->pkt_buffer));
-    }
-    LOG("\n\n");
-
-    // Inform halRadio to remain in RX
-    return HAL_RADIO_CB_DO_NOTHING;
-}
-
-static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t* hal_packet, halRadioErr_t result) {
-    myInstance_t * inst = CONTAINER_OF(interface, myInstance_t, hal_interface);
-
-    // Set the radio to RX
-    inst->hal_interface.pkt_buffer = &inst->rx_buffer;
-    int32_t res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface);
-
-    if (res != HAL_RADIO_SUCCESS) {
-        LOG("RADIO RX FAILED! %i\n", res);
-        return res;
-    }
-
-    // Inform the halRadio to stay in the state configured here
-    return HAL_RADIO_CB_DO_NOTHING;
 }
 
 int main()
@@ -192,44 +119,13 @@ int main()
         return res;
     }
 
-
-    // Init the RX buffer
-    if(cBufferInit(&my_instance.rx_buffer, my_instance.rx_byte_array, RADIO_RX_BUFFER_SIZE) != C_BUFFER_SUCCESS) {
-        return 1;
-    }
-
     // Init the TX buffer
     if(cBufferInit(&my_instance.tx_buffer, my_instance.tx_byte_array, RADIO_TX_BUFFER_SIZE) != C_BUFFER_SUCCESS) {
         return 1;
     }
 
-    my_instance.hal_interface.package_cb  = halRadioPackageCb;
-    my_instance.hal_interface.pkg_sent_cb = halRadioSentCb;
-    my_instance.hal_interface.pkt_buffer = &my_instance.rx_buffer;
-
-    /* Blocking Recive
     while (true) {
-        res = halRadioReceivePackageBlockingInterface(&my_instance.hal_radio_inst, &my_instance.hal_interface, 0xFFFFFFFF);
-        LOG("Receive Result %i\n", res);
-    }
-    */
-
-    /* Non blocking receive */
-    // Set the radio to RX
-    res = halRadioReceivePackageNB(&my_instance.hal_radio_inst, &my_instance.hal_interface);
-    if (res != HAL_RADIO_SUCCESS) {
-        LOG("RADIO RX FAILED! %i\n", res);
-        device_error();
-    }
-
-    while (true) {
-        res = halRadioProcess(&my_instance.hal_radio_inst);
-        if (res != HAL_RADIO_SUCCESS) {
-            LOG("RADIO PROCESS FAILED! %i\n", res);
-            device_error();
-        }
-
-        // Process the button
+       // Process the button
         res = picoBootSelButtonProcess(&my_instance.boot_button);
         if (res != PICO_BOOTSEL_BTN_SUCCESS) {
             LOG("BUTTON PROCESS FAILED!\n");

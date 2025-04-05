@@ -31,6 +31,7 @@
 #include "pico/stdlib.h"
 
 #include "pico/stdlib.h"
+#include "pico/mutex.h"
 #include "hardware/spi.h"
 #include "rfm69_rp2040.h"
 #include "hal_gpio.h"
@@ -71,6 +72,14 @@
 #ifndef HAL_RADIO_PIN_DIO0
 #define HAL_RADIO_PIN_DIO0 (21)
 #endif /* HAL_RADIO_PIN_DIO0 */
+
+#ifndef HAL_RADIO_PIN_DIO1
+#define HAL_RADIO_PIN_DIO1 (15)
+#endif /* HAL_RADIO_PIN_DIO1 */
+
+#ifndef HAL_RADIO_FIFO_THRESHOLD
+#define HAL_RADIO_FIFO_THRESHOLD (32) // Default is one less than 50% of fifo
+#endif /* HAL_RADIO_FIFO_THRESHOLD */
 
 #ifndef HAL_RADIO_MAX_BUFFER_SIZE
 #define HAL_RADIO_MAX_BUFFER_SIZE (128) // The RFM69 radio actually supports 255
@@ -164,19 +173,24 @@ typedef struct {
 } halRadioConfig_t;
 
 typedef struct {
+    // Thread/ISR safety management
+    mutex_t mutex;
+
     // Radio configuration
     halRadioConfig_t config;
-    uint8_t current_tx_size;
+    uint8_t          current_packet_size;
+    uint8_t          radio_state;
 
     // Gpio interfaces
     halGpioInterface_t gpio_dio0;
-    volatile bool      gpio_interrupt;
+    halGpioInterface_t gpio_dio1;
+    volatile uint8_t   gpio_interrupt;
 
     // Callbacks and radio mode
     // Mode is used to keep track of sending and receiving in NB mode
     halRadioMode_t       mode;
     halRadioInterface_t *package_callback;
-    halRadioPackage_t   active_package;
+    halRadioPackage_t    active_package;
 
     // Hardware driver instance
     rfm69_context_t rfm;
@@ -233,11 +247,20 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
 /**
  * Receive package, try to receive a package during specific time
  * Input: Pointer to instance
- * Input: Pointer to data byte array to write to
- * Input: Pointer to data max_size, value will be changed to received packet size, if a packet is received
+ * Input: Pointer to c_buffer to populate with data
+ * Input: timeout time
  * Returns: halRadioErr_t
  */
-int32_t halRadioReceivePackageBlocking(halRadio_t *inst, uint32_t time_ms, uint8_t *data, size_t *size);
+int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buffer, uint32_t time_ms);
+
+/**
+ * Receive package blocking call to interface callbacks
+ * Input: Pointer to instance
+ * Input: Pointer to insterface
+ * Input: timeout time
+ * Returns: halRadioErr_t
+ */
+int32_t halRadioReceivePackageBlockingInterface(halRadio_t *inst, halRadioInterface_t *interface, uint32_t time_ms);
 
 /**
  * Enable package receive in non blocking mode
@@ -290,5 +313,16 @@ int32_t halRadioBitRateToDelayUs(halRadio_t *inst, halRadioBitrate_t bitrate, ui
  * Returns: halRadioErr_t or time
  */
 int32_t halRadioSpiDelayEstimateUs(halRadio_t *inst, uint8_t num_bytes);
+
+/**
+ * Check if the radio is busy. This can be used for ISR and thread safety checks.
+ * When using the Non Blocking functions the halRadio does run in the background in ISR
+ * or main context through the process function. Checking with this function before
+ * access in ISR or multiple threadcontext adds a layer of protection.
+ *
+ * Input: Pointer to radio instance
+ * Returns: halRadioErr_t
+ */
+int32_t halRadioCheckBusy(halRadio_t *inst);
 
 #endif /* HAL_RADIO_H */
