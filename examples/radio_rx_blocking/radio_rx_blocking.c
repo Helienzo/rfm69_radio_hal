@@ -65,7 +65,10 @@ static int32_t halRadioPackageCb(myInstance_t *inst, cBuffer_t *buf) {
         return result;
     }
 
-    LOG("%i bytes received.\n", result);
+    // Get the address
+    result -= 1; // And remove the address byte from the length
+    uint8_t addr = cBufferReadByte(buf);
+    LOG("%i bytes received on addr %u.\n", result, addr);
 
     // Print out payload
     LOG("Payload: ");
