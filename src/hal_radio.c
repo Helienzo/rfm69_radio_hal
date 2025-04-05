@@ -1532,7 +1532,7 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
                 // Transfer complete
                 inst->current_packet_size = 0;
 
-                if (cBufferClear(inst->package_callback->pkt_buffer) != C_BUFFER_SUCCESS) {
+                if (cBufferClear(pkt_buffer) != C_BUFFER_SUCCESS) {
                     return HAL_RADIO_BUFFER_ERROR;
                 }
             }
@@ -1543,7 +1543,7 @@ static int32_t writeDataAndEnableTx(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
             return HAL_RADIO_DRIVER_ERROR;
         }
 
-        if (cBufferClear(inst->package_callback->pkt_buffer) != C_BUFFER_SUCCESS) {
+        if (cBufferClear(pkt_buffer) != C_BUFFER_SUCCESS) {
             return HAL_RADIO_BUFFER_ERROR;
         }
 
