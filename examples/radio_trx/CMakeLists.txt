@@ -37,7 +37,7 @@ include(FetchContent)
 FetchContent_Declare(
   rp2x_rfm69
   GIT_REPOSITORY https://github.com/Helienzo/rp2x_rfm69.git
-  GIT_TAG        main
+  GIT_TAG        feature/add_get_helpers
 )
 FetchContent_MakeAvailable(rp2x_rfm69)
 
@@ -51,7 +51,7 @@ FetchContent_MakeAvailable(c_buffer)
 FetchContent_Declare(
   pi_pico_gpio_hal
   GIT_REPOSITORY https://github.com/Helienzo/pi_pico_gpio_hal.git
-  GIT_TAG        feature/add_get_helpers
+  GIT_TAG        main
 )
 FetchContent_MakeAvailable(pi_pico_gpio_hal)
 
