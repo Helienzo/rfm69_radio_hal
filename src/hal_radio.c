@@ -708,6 +708,14 @@ static int32_t manageDio1Interrupt(halRadio_t *inst) {
     return HAL_RADIO_SUCCESS;
 }
 
+int32_t halRadioEventInQueue(halRadio_t *inst) {
+    if (inst->gpio_interrupt > 0) {
+        return HAL_RADIO_INTERRUPT_IN_QUEUE;
+    }
+
+    return HAL_RADIO_SUCCESS;
+}
+
 int32_t halRadioProcess(halRadio_t *inst) {
     switch (inst->gpio_interrupt) {
         case 0:
