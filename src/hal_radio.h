@@ -31,6 +31,7 @@
 #include "pico/stdlib.h"
 
 #include "pico/stdlib.h"
+#include "pico/mutex.h"
 #include "hardware/spi.h"
 #include "rfm69_rp2040.h"
 #include "hal_gpio.h"
@@ -172,6 +173,9 @@ typedef struct {
 } halRadioConfig_t;
 
 typedef struct {
+    // Thread/ISR safety management
+    mutex_t mutex;
+
     // Radio configuration
     halRadioConfig_t config;
     uint8_t          current_packet_size;
@@ -309,5 +313,16 @@ int32_t halRadioBitRateToDelayUs(halRadio_t *inst, halRadioBitrate_t bitrate, ui
  * Returns: halRadioErr_t or time
  */
 int32_t halRadioSpiDelayEstimateUs(halRadio_t *inst, uint8_t num_bytes);
+
+/**
+ * Check if the radio is busy. This can be used for ISR and thread safety checks.
+ * When using the Non Blocking functions the halRadio does run in the background in ISR
+ * or main context through the process function. Checking with this function before
+ * access in ISR or multiple threadcontext adds a layer of protection.
+ *
+ * Input: Pointer to radio instance
+ * Returns: halRadioErr_t
+ */
+int32_t halRadioCheckBusy(halRadio_t *inst);
 
 #endif /* HAL_RADIO_H */
