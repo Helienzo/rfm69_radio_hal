@@ -77,7 +77,6 @@ static const float kHalRadioSpiUsPerByte = (8.0f * 1000000.0f)/HAL_RADIO_SPI_BAU
 static int32_t managePacketSent(halRadio_t *inst) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -129,7 +128,6 @@ static int32_t managePacketSent(halRadio_t *inst) {
 
     taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -191,7 +189,6 @@ static int32_t managePacketSent(halRadio_t *inst) {
 static int32_t managePayloadReady(halRadio_t *inst) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -293,7 +290,6 @@ static int32_t managePayloadReady(halRadio_t *inst) {
 
     taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -388,7 +384,6 @@ static int32_t manageDio0Interrupt(halRadio_t *inst) {
     // Protect the radio during hal access
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -438,7 +433,6 @@ static int32_t manageTXFifoThreshold(halRadio_t *inst) {
 
                 bool taken = mutex_try_enter(&inst->mutex, NULL);
                 if (!taken) {
-                    LOG("BUSY 1 \n");
                     return HAL_RADIO_BUSY;
                 }
                 // Check if the payload ready flag has triggered
@@ -467,7 +461,6 @@ static int32_t manageTXFifoThreshold(halRadio_t *inst) {
 static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -525,7 +518,6 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
 
             bool taken = mutex_try_enter(&inst->mutex, NULL);
             if (!taken) {
-                LOG("BUSY 1 \n");
                 return HAL_RADIO_BUSY;
             }
 
@@ -611,7 +603,6 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -649,7 +640,6 @@ static int32_t manageDio1Interrupt(halRadio_t *inst) {
     // Protect access to the radio
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -724,7 +714,6 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -1024,7 +1013,6 @@ int32_t halRadioCancelReceive(halRadio_t *inst) {
     uint32_t tst = 3;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
-        LOG("BUSY 3 %i\n", tst);
         return HAL_RADIO_BUSY;
     }
 
@@ -1060,7 +1048,6 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
     uint32_t tst = 4;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
-        LOG("BUSY 4 %i\n", tst);
         return HAL_RADIO_BUSY;
     }
  
@@ -1353,7 +1340,6 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
     uint32_t tst = 5;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
-        LOG("BUSY 5 %i\n", tst);
         return HAL_RADIO_BUSY;
     }
 
@@ -1385,7 +1371,6 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
 static int32_t byteWiseWrite(halRadio_t *inst, cBuffer_t *tx_buf, uint8_t num_bytes) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -1567,7 +1552,6 @@ int32_t halRadioEnterTX(halRadio_t *inst) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        LOG("BUSY 1 \n");
         return HAL_RADIO_BUSY;
     }
 
@@ -1597,7 +1581,6 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
     uint32_t tst = 6;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
-        LOG("BUSY 6 %i\n", tst);
         return HAL_RADIO_BUSY;
     }
 
@@ -1649,7 +1632,6 @@ int32_t halRadioQueueSend(halRadio_t *inst) {
     uint32_t tst = 7;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
-        LOG("BUSY 7 %i\n", tst);
         return HAL_RADIO_BUSY;
     }
 
@@ -1681,7 +1663,6 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
     uint32_t tst = 8;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
-        LOG("BUSY 8 %i\n", tst);
         return HAL_RADIO_BUSY;
     }
 
