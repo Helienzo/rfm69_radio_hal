@@ -83,12 +83,14 @@ static int32_t managePacketSent(halRadio_t *inst) {
     // Read the packet sent flag
     bool state = false;
     int32_t cb_res = HAL_RADIO_CB_SUCCESS;
+    // TODO is this check enough, perhaps there is a risk that we end up here twice on the same packet?
     if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PACKET_SENT, &state)) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR;
     }
 
     // If the package was not sent this is an invalid interrupt, bad ..
+    // TODO we must check if this is a bad interrupt, a duplicate message sent or something else.
     if (!state) {
         // Try to return to default mode
         if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
@@ -113,9 +115,11 @@ static int32_t managePacketSent(halRadio_t *inst) {
         inst->mode = HAL_RADIO_IDLE;
 
         // Notify that the package send failed
+        // TODO it is not really a send fail, this is a weird interrupt, might not be related to any packet
         if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
             cb_res = inst->package_callback->pkg_sent_cb(inst->package_callback, &inst->active_package, HAL_RADIO_SEND_FAIL);
         }
+        inst->active_package.address = 0;
     } else {
         inst->mode = HAL_RADIO_TX_IDLE;
 
@@ -124,6 +128,7 @@ static int32_t managePacketSent(halRadio_t *inst) {
         if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
             cb_res = inst->package_callback->pkg_sent_cb(inst->package_callback, &inst->active_package, HAL_RADIO_SUCCESS);
         }
+        inst->active_package.address = 0;
     }
 
     taken = mutex_try_enter(&inst->mutex, NULL);
