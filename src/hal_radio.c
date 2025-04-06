@@ -32,6 +32,10 @@
 #define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
 #endif
 
+#ifndef LOG_DEBUG_BUSY
+#define LOG_DEBUG_BUSY(f_, ...) printf((f_), ##__VA_ARGS__)
+#endif
+
 #ifndef LOG_DEBUG
 #define LOG_DEBUG(f_, ...)
 #endif
@@ -77,6 +81,7 @@ static const float kHalRadioSpiUsPerByte = (8.0f * 1000000.0f)/HAL_RADIO_SPI_BAU
 static int32_t managePacketSent(halRadio_t *inst) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 0);
         return HAL_RADIO_BUSY;
     }
 
@@ -133,6 +138,7 @@ static int32_t managePacketSent(halRadio_t *inst) {
 
     taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 1);
         return HAL_RADIO_BUSY;
     }
 
@@ -202,6 +208,7 @@ static int32_t cleanUpDuringRx(halRadio_t *inst, int32_t ret_val) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i %i\n", 33, ret_val);
         return HAL_RADIO_BUSY; // Not good
     }
 
@@ -233,6 +240,7 @@ static int32_t cleanUpDuringRx(halRadio_t *inst, int32_t ret_val) {
 static int32_t managePayloadReady(halRadio_t *inst) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 3);
         return cleanUpDuringRx(inst, HAL_RADIO_BUSY); // Fatal error
     }
 
@@ -286,6 +294,7 @@ static int32_t managePayloadReady(halRadio_t *inst) {
 
         // Check if the packet size is valid
         if (inst->current_packet_size == 0 || inst->current_packet_size > cBufferAvailableForWrite(rx_buf)) {
+            mutex_exit(&inst->mutex);
             // This is not a critical error but this packet is lost
             return cleanUpDuringRx(inst, HAL_RADIO_RECEIVE_FAIL);
         }
@@ -335,6 +344,7 @@ static int32_t managePayloadReady(halRadio_t *inst) {
     taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
         // This is not good, the radio will en up in an undefined state
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 4);
         return cleanUpDuringRx(inst, HAL_RADIO_BUSY);
     }
 
@@ -429,6 +439,7 @@ static int32_t manageDio0Interrupt(halRadio_t *inst) {
     // Protect the radio during hal access
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 5);
         return HAL_RADIO_BUSY; // Fatal error
     }
 
@@ -480,6 +491,7 @@ static int32_t manageTXFifoThreshold(halRadio_t *inst) {
 
                 bool taken = mutex_try_enter(&inst->mutex, NULL);
                 if (!taken) {
+                    LOG_DEBUG_BUSY("BUSY ERROR %i\n", 6);
                     return HAL_RADIO_BUSY; // Fatal error
                 }
 
@@ -509,6 +521,7 @@ static int32_t manageTXFifoThreshold(halRadio_t *inst) {
 static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 7);
         return HAL_RADIO_BUSY;
     }
 
@@ -571,6 +584,7 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
 
             bool taken = mutex_try_enter(&inst->mutex, NULL);
             if (!taken) {
+                LOG_DEBUG_BUSY("BUSY ERROR %i\n", 8);
                 return HAL_RADIO_BUSY; // Fatal error
             }
 
@@ -662,6 +676,7 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 9);
         return HAL_RADIO_BUSY; // Fatal error
     }
 
@@ -699,6 +714,7 @@ static int32_t manageDio1Interrupt(halRadio_t *inst) {
     // Protect access to the radio
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 10);
         return HAL_RADIO_BUSY; // Fatal error
     }
 
@@ -781,6 +797,7 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 11);
         return HAL_RADIO_BUSY;
     }
 
@@ -1080,6 +1097,7 @@ int32_t halRadioCancelReceive(halRadio_t *inst) {
     uint32_t tst = 3;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 12);
         return HAL_RADIO_BUSY;
     }
 
@@ -1115,12 +1133,14 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
     uint32_t tst = 4;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 13);
         return HAL_RADIO_BUSY;
     }
  
     // Check if the radio is busy
     if (inst->mode == HAL_RADIO_TX) {
         mutex_exit(&inst->mutex);
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 14);
         return HAL_RADIO_BUSY;
     }
 
@@ -1422,6 +1442,7 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
     uint32_t tst = 5;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 15);
         return HAL_RADIO_BUSY;
     }
 
@@ -1453,6 +1474,7 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
 static int32_t byteWiseWrite(halRadio_t *inst, cBuffer_t *tx_buf, uint8_t num_bytes) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 16);
         return HAL_RADIO_BUSY;
     }
 
@@ -1638,6 +1660,7 @@ int32_t halRadioEnterTX(halRadio_t *inst) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 17);
         return HAL_RADIO_BUSY;
     }
 
@@ -1667,12 +1690,14 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
     uint32_t tst = 6;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 18);
         return HAL_RADIO_BUSY;
     }
 
     // Check if the radio is ready for transmitt
     if (inst->mode == HAL_RADIO_TX) {
         mutex_exit(&inst->mutex);
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 19);
         return HAL_RADIO_BUSY;
     }
 
@@ -1718,6 +1743,7 @@ int32_t halRadioQueueSend(halRadio_t *inst) {
     uint32_t tst = 7;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 20);
         return HAL_RADIO_BUSY;
     }
 
@@ -1749,12 +1775,14 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
     uint32_t tst = 8;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 21);
         return HAL_RADIO_BUSY;
     }
 
     // Check if the radio is ready for transmitt
     if (inst->mode != HAL_RADIO_IDLE) {
         mutex_exit(&inst->mutex);
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 22);
         return HAL_RADIO_BUSY;
     }
 
@@ -1984,6 +2012,7 @@ int32_t halRadioCheckBusy(halRadio_t *inst) {
     uint32_t tst = 9;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 23);
         return HAL_RADIO_BUSY;
     }
 
