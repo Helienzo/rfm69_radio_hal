@@ -91,7 +91,8 @@
 #define HAL_RADIO_MAX_PACKET_SIZE  (HAL_RADIO_MAX_BUFFER_SIZE - HAL_RADIO_PACKET_OVERHEAD)
 
 typedef enum {
-    HAL_RADIO_SUCCESS,
+    HAL_RADIO_INTERRUPT_IN_QUEUE = 1,
+    HAL_RADIO_SUCCESS            = 0,
     HAL_RADIO_NULL_ERROR    = -10001,
     HAL_RADIO_GEN_ERROR     = -10002,
     HAL_RADIO_DRIVER_ERROR  = -10003,
@@ -201,6 +202,12 @@ typedef struct {
  * Returns: halRadioErr_t
 */
 int32_t halRadioProcess(halRadio_t *inst);
+
+/**
+ * Check if there is an event in the queue
+ * Returns: halRadioErr_t
+*/
+int32_t halRadioEventInQueue(halRadio_t *inst);
 
 /**
  * Initialize a radio instance

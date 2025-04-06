@@ -32,6 +32,10 @@
 #define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
 #endif
 
+#ifndef LOG_DEBUG_BUSY
+#define LOG_DEBUG_BUSY(f_, ...) printf((f_), ##__VA_ARGS__)
+#endif
+
 #ifndef LOG_DEBUG
 #define LOG_DEBUG(f_, ...)
 #endif
@@ -77,18 +81,21 @@ static const float kHalRadioSpiUsPerByte = (8.0f * 1000000.0f)/HAL_RADIO_SPI_BAU
 static int32_t managePacketSent(halRadio_t *inst) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 0);
         return HAL_RADIO_BUSY;
     }
 
     // Read the packet sent flag
     bool state = false;
     int32_t cb_res = HAL_RADIO_CB_SUCCESS;
+    // TODO is this check enough, perhaps there is a risk that we end up here twice on the same packet?
     if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PACKET_SENT, &state)) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR;
     }
 
     // If the package was not sent this is an invalid interrupt, bad ..
+    // TODO we must check if this is a bad interrupt, a duplicate message sent or something else.
     if (!state) {
         // Try to return to default mode
         if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
@@ -113,9 +120,11 @@ static int32_t managePacketSent(halRadio_t *inst) {
         inst->mode = HAL_RADIO_IDLE;
 
         // Notify that the package send failed
+        // TODO it is not really a send fail, this is a weird interrupt, might not be related to any packet
         if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
             cb_res = inst->package_callback->pkg_sent_cb(inst->package_callback, &inst->active_package, HAL_RADIO_SEND_FAIL);
         }
+        inst->active_package.address = 0;
     } else {
         inst->mode = HAL_RADIO_TX_IDLE;
 
@@ -124,10 +133,12 @@ static int32_t managePacketSent(halRadio_t *inst) {
         if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
             cb_res = inst->package_callback->pkg_sent_cb(inst->package_callback, &inst->active_package, HAL_RADIO_SUCCESS);
         }
+        inst->active_package.address = 0;
     }
 
     taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 1);
         return HAL_RADIO_BUSY;
     }
 
@@ -186,10 +197,51 @@ static int32_t managePacketSent(halRadio_t *inst) {
     return HAL_RADIO_SUCCESS;
 }
 
+static int32_t cleanUpDuringRx(halRadio_t *inst, int32_t ret_val) {
+    // Reset the radio receive state
+    inst->radio_state = HAL_RADIO_REC_IDLE;
+
+    // If the radio is busy we must exit here
+    if (ret_val == HAL_RADIO_BUSY) {
+        return ret_val;
+    }
+
+    bool taken = mutex_try_enter(&inst->mutex, NULL);
+    if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i %i\n", 33, ret_val);
+        return HAL_RADIO_BUSY; // Not good
+    }
+
+    // Check if we need to empty the buffer
+    bool not_empty = true;
+    uint32_t counter = 0;
+
+    while (not_empty && (counter < RFM69_FIFO_SIZE)) {
+        if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_NOT_EMPTY, &not_empty)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR; // Fatal error
+        }
+
+        if (not_empty) {
+            // Read the byte
+            uint8_t buf = 0;
+            if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, &buf, 1)) {
+                mutex_exit(&inst->mutex);
+                return HAL_RADIO_DRIVER_ERROR; // Fatal error
+            }
+            counter++;
+        }
+    }
+
+    mutex_exit(&inst->mutex);
+    return ret_val;
+}
+
 static int32_t managePayloadReady(halRadio_t *inst) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        return HAL_RADIO_BUSY;
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 3);
+        return cleanUpDuringRx(inst, HAL_RADIO_BUSY); // Fatal error
     }
 
     LOG_DEBUG("PAYLOAD READY INTERRUPT %u\n", inst->current_packet_size);
@@ -198,7 +250,7 @@ static int32_t managePayloadReady(halRadio_t *inst) {
     // TODO we could improve speed by reading the IRQ register once and checking mulitple flags
     if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state)) {
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+        return HAL_RADIO_DRIVER_ERROR; // Fatal error
     }
 
     // Check if any package was received, and that the interrupt was valid
@@ -206,13 +258,12 @@ static int32_t managePayloadReady(halRadio_t *inst) {
         // Try to return to default mode
         if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
             mutex_exit(&inst->mutex);
-            return HAL_RADIO_DRIVER_ERROR;
+            return HAL_RADIO_DRIVER_ERROR; // Fatal error
         }
 
-        // Reset the radio mode
-        inst->mode = HAL_RADIO_IDLE;
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_RECEIVE_FAIL;
+        // This is not a critical error but this packet is lost
+        return cleanUpDuringRx(inst, HAL_RADIO_RECEIVE_FAIL);
     }
 
     // Get the CRC state
@@ -232,18 +283,20 @@ static int32_t managePayloadReady(halRadio_t *inst) {
         // Clear the buffer used for receiving data
         if (cBufferClear(rx_buf) < 0) {
             mutex_exit(&inst->mutex);
-            return HAL_RADIO_BUFFER_ERROR;
+            return HAL_RADIO_BUFFER_ERROR; // Fatal error
         }
 
         // Try to Read payload size byte from FIFO, but only if it was not done in the fifo interrupt
         if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, &inst->current_packet_size, 1)) {
             mutex_exit(&inst->mutex);
-            return HAL_RADIO_DRIVER_ERROR;
+            return HAL_RADIO_DRIVER_ERROR; // Fatal error
         }
 
         // Check if the packet size is valid
         if (inst->current_packet_size == 0 || inst->current_packet_size > cBufferAvailableForWrite(rx_buf)) {
-            return HAL_RADIO_INVALID_SIZE;
+            mutex_exit(&inst->mutex);
+            // This is not a critical error but this packet is lost
+            return cleanUpDuringRx(inst, HAL_RADIO_RECEIVE_FAIL);
         }
     }
 
@@ -251,24 +304,24 @@ static int32_t managePayloadReady(halRadio_t *inst) {
     uint8_t * raw_rx_buffer = NULL;
     if ((raw_rx_buffer = cBufferGetWritePointer(rx_buf)) == NULL){
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_BUFFER_ERROR;
+        return HAL_RADIO_BUFFER_ERROR; // Fatal error
     }
 
     // Try to Read the rest of the payload
     if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, inst->current_packet_size)) {
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+        return HAL_RADIO_DRIVER_ERROR; // Fatal error
     }
 
     if (cBufferEmptyWrite(rx_buf, inst->current_packet_size) < C_BUFFER_SUCCESS) {
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_BUFFER_ERROR;
+        return HAL_RADIO_BUFFER_ERROR; // Fatal error
     }
 
     inst->current_packet_size = 0;
 
     // |SIZE|ADDR|PAYLOAD|, size = sizeof(addr) + sizeof(payload)
-    // Get the target address for this package, should be this radio ..
+    // Get the target address for this package, should be this radio .., this call is safe
     inst->active_package.address = cBufferReadByte(rx_buf);
 
     int32_t cb_res = HAL_RADIO_CB_SUCCESS;
@@ -282,7 +335,7 @@ static int32_t managePayloadReady(halRadio_t *inst) {
     } else {
         LOG("CRC FAIL\n");
         if (cBufferClear(rx_buf) != C_BUFFER_SUCCESS) {
-            return HAL_RADIO_BUFFER_ERROR;
+            return HAL_RADIO_BUFFER_ERROR; // Fatal error
         }
         // Stay in RX as we where intructed
         cb_res = HAL_RADIO_CB_DO_NOTHING;
@@ -290,7 +343,9 @@ static int32_t managePayloadReady(halRadio_t *inst) {
 
     taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        return HAL_RADIO_BUSY;
+        // This is not good, the radio will en up in an undefined state
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 4);
+        return cleanUpDuringRx(inst, HAL_RADIO_BUSY);
     }
 
     // Manage result from callback
@@ -299,19 +354,19 @@ static int32_t managePayloadReady(halRadio_t *inst) {
             // Try to return radio to default mode
             if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_DRIVER_ERROR;
+                return HAL_RADIO_DRIVER_ERROR; // Fatal error
             }
 
             // Reset the GPIO callback
             if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO0)) != HAL_GPIO_SUCCESS) {
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_GPIO_ERROR;
+                return HAL_RADIO_GPIO_ERROR; // Fatal error
             }
 
             // Reset the GPIO callback
             if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_GPIO_ERROR;
+                return HAL_RADIO_GPIO_ERROR; // Fatal error
             }
 
             inst->mode = HAL_RADIO_IDLE;
@@ -322,20 +377,20 @@ static int32_t managePayloadReady(halRadio_t *inst) {
             // Re-Enable gpio callback for fifo level
             if (halGpioEnableIrqCbRisingEdge(&inst->gpio_dio1, HAL_RADIO_PIN_DIO1) != HAL_GPIO_SUCCESS) {
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_GPIO_ERROR;
+                return HAL_RADIO_GPIO_ERROR; // Fatal error
             }
             break;
         default:
             // Try to return radio to default mode
             if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_DRIVER_ERROR;
+                return HAL_RADIO_DRIVER_ERROR; // Fatal error
             }
 
             // Reset the GPIO callback
             if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO0)) != HAL_GPIO_SUCCESS) {
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_GPIO_ERROR;
+                return HAL_RADIO_GPIO_ERROR; // Fatal error
             }
 
             inst->mode = HAL_RADIO_IDLE;
@@ -384,13 +439,14 @@ static int32_t manageDio0Interrupt(halRadio_t *inst) {
     // Protect the radio during hal access
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        return HAL_RADIO_BUSY;
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 5);
+        return HAL_RADIO_BUSY; // Fatal error
     }
 
     // Try to return radio to default mode
     if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+        return HAL_RADIO_DRIVER_ERROR; // Fatal error
     }
 
     mutex_exit(&inst->mutex);
@@ -407,20 +463,22 @@ static int32_t manageTXFifoThreshold(halRadio_t *inst) {
             // Check if there still is more to send than fits in the fifo
             if (inst->current_packet_size > HAL_RADIO_FIFO_THRESHOLD) {
                 LOG_DEBUG("Writing %u bytes\n", HAL_RADIO_FIFO_THRESHOLD);
-                if (byteWiseWrite(inst, inst->package_callback->pkt_buffer, HAL_RADIO_FIFO_THRESHOLD) != HAL_RADIO_SUCCESS) {
-                    return HAL_RADIO_SEND_FAIL;
+                int32_t res = byteWiseWrite(inst, inst->package_callback->pkt_buffer, HAL_RADIO_FIFO_THRESHOLD);
+                if (res != HAL_RADIO_SUCCESS) {
+                    return res; // Probably a fatal error
                 }
 
                 inst->current_packet_size -= HAL_RADIO_FIFO_THRESHOLD;
             } else {
                 if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
-                    return HAL_RADIO_GPIO_ERROR;
+                    return HAL_RADIO_GPIO_ERROR; // Fatal error
                 }
 
                 LOG_DEBUG("Writing %u bytes\n", inst->current_packet_size);
                 // Write the rest of the data
-                if (byteWiseWrite(inst, inst->package_callback->pkt_buffer, inst->current_packet_size) != HAL_RADIO_SUCCESS) {
-                    return HAL_RADIO_SEND_FAIL;
+                int32_t res = byteWiseWrite(inst, inst->package_callback->pkt_buffer, inst->current_packet_size);
+                if (res != HAL_RADIO_SUCCESS) {
+                    return res; // Probably a fatal error
                 }
 
                 // Transfer complete
@@ -433,12 +491,14 @@ static int32_t manageTXFifoThreshold(halRadio_t *inst) {
 
                 bool taken = mutex_try_enter(&inst->mutex, NULL);
                 if (!taken) {
-                    return HAL_RADIO_BUSY;
+                    LOG_DEBUG_BUSY("BUSY ERROR %i\n", 6);
+                    return HAL_RADIO_BUSY; // Fatal error
                 }
+
                 // Check if the payload ready flag has triggered
                 if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PACKET_SENT, &state)) {
                     mutex_exit(&inst->mutex);
-                    return HAL_RADIO_DRIVER_ERROR;
+                    return HAL_RADIO_DRIVER_ERROR; // Fatal error
                 }
 
                 mutex_exit(&inst->mutex);
@@ -461,6 +521,7 @@ static int32_t manageTXFifoThreshold(halRadio_t *inst) {
 static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 7);
         return HAL_RADIO_BUSY;
     }
 
@@ -474,18 +535,23 @@ static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
     while (read_bytes < num_bytes && e_time < expected_time) {
         e_time = time_us_64() - s_time;
 
-        rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_NOT_EMPTY, &state);
+        if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_NOT_EMPTY, &state)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR; // Fatal error
+        }
+
         if (state) {
             uint8_t next_byte = 0;
             // Try to Read 1 byte
             if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, &next_byte, 1)) {
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_DRIVER_ERROR;
+                return HAL_RADIO_DRIVER_ERROR; // Fatal error
             }
 
             if (cBufferAppendByte(rx_buf, next_byte) != 1) {
+                // We end up here if the buffer is full
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_BUFFER_ERROR;
+                return HAL_RADIO_RECEIVE_FAIL; // Not a critical error but this packet is lost
             }
 
             read_bytes++;
@@ -495,7 +561,7 @@ static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
 
     if (read_bytes != num_bytes) {
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_RECEIVE_FAIL;
+        return HAL_RADIO_RECEIVE_FAIL; // Not a critical error but this packet is lost
     }
 
     mutex_exit(&inst->mutex);
@@ -513,25 +579,26 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
         case HAL_RADIO_REC_IDLE:
             // Clear the buffer to make room for a new package
             if (cBufferClear(rx_buf) < 0) {
-                return HAL_RADIO_BUFFER_ERROR;
+                return HAL_RADIO_BUFFER_ERROR; // Fatal error
             }
 
             bool taken = mutex_try_enter(&inst->mutex, NULL);
             if (!taken) {
-                return HAL_RADIO_BUSY;
+                LOG_DEBUG_BUSY("BUSY ERROR %i\n", 8);
+                return HAL_RADIO_BUSY; // Fatal error
             }
 
             // Try to Read payload size byte from FIFO
             if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, &inst->current_packet_size, 1)) {
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_DRIVER_ERROR;
+                return HAL_RADIO_DRIVER_ERROR; // Fatal error
             }
 
             mutex_exit(&inst->mutex);
 
             // Check if the packet size is valid
             if (inst->current_packet_size == 0 || inst->current_packet_size > cBufferAvailableForWrite(rx_buf)) {
-                return HAL_RADIO_INVALID_SIZE;
+                return cleanUpDuringRx(inst, HAL_RADIO_SUCCESS); // Not a fatal error but this packet is lost
             }
 
             // Check if a this is a large packet that needs to be read from the fifo in steps
@@ -539,9 +606,12 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
                 LOG_DEBUG("Large packet transfer 1st %u\n", inst->current_packet_size);
 
                 // Try to Read remaining data bytes from FIFO, keep in mind that we have allready read 1 byte to get the size
-                if ((result = byteWiseRead(inst, HAL_RADIO_FIFO_THRESHOLD - 1)) != HAL_RADIO_SUCCESS) {
+                result = byteWiseRead(inst, HAL_RADIO_FIFO_THRESHOLD - 1);
+                if (result == HAL_RADIO_RECEIVE_FAIL) {
+                    return cleanUpDuringRx(inst, HAL_RADIO_SUCCESS); // Not a fatal error but this packet is lost
+                } else if (result != HAL_RADIO_SUCCESS) {
                     LOG("Bytewise read fail 1 %i\n", result);
-                    return result;
+                    return result; // Probably a fatal error
                 }
 
                 inst->current_packet_size -= (HAL_RADIO_FIFO_THRESHOLD - 1);
@@ -556,7 +626,7 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
 
                     // Reset the GPIO callback, to not trigger when reading data from fifo
                     if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
-                        return HAL_RADIO_GPIO_ERROR;
+                        return HAL_RADIO_GPIO_ERROR; // Fatal error
                     }
                 }
             } else {
@@ -566,7 +636,7 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
 
                 // Reset the GPIO callback, to not trigger when reading data from fifo
                 if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
-                    return HAL_RADIO_GPIO_ERROR;
+                    return HAL_RADIO_GPIO_ERROR; // Fatal error
                 }
             }
         break;
@@ -574,9 +644,12 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
             LOG_DEBUG("Large packet transfer rest %u\n", inst->current_packet_size);
 
             // Try to Read data bytes from FIFO
-            if ((result = byteWiseRead(inst, HAL_RADIO_FIFO_THRESHOLD)) != HAL_RADIO_SUCCESS) {
+            result = byteWiseRead(inst, HAL_RADIO_FIFO_THRESHOLD);
+            if (result == HAL_RADIO_RECEIVE_FAIL) {
+                return cleanUpDuringRx(inst, HAL_RADIO_SUCCESS); // Not a fatal error but this packet is lost
+            } else if (result != HAL_RADIO_SUCCESS) {
                 LOG("Bytewise read fail 2 %i\n", result);
-                return result;
+                return result; // Probably a fatal error
             }
 
             inst->current_packet_size -= HAL_RADIO_FIFO_THRESHOLD;
@@ -592,7 +665,7 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
 
                 // Reset the GPIO callback, to not trigger when reading data from fifo
                 if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
-                    return HAL_RADIO_GPIO_ERROR;
+                    return HAL_RADIO_GPIO_ERROR; // Fatal error
                 }
             }
             break;
@@ -603,13 +676,14 @@ static int32_t manageRXFifoThreshold(halRadio_t *inst) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        return HAL_RADIO_BUSY;
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 9);
+        return HAL_RADIO_BUSY; // Fatal error
     }
 
     bool state = false;
     if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state)) {
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+        return HAL_RADIO_DRIVER_ERROR; // Fatal error
     }
 
     mutex_exit(&inst->mutex);
@@ -640,16 +714,25 @@ static int32_t manageDio1Interrupt(halRadio_t *inst) {
     // Protect access to the radio
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
-        return HAL_RADIO_BUSY;
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 10);
+        return HAL_RADIO_BUSY; // Fatal error
     }
 
     // Try to return radio to default mode
     if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+        return HAL_RADIO_DRIVER_ERROR; // Fatal error
     }
 
     mutex_exit(&inst->mutex);
+
+    return HAL_RADIO_SUCCESS;
+}
+
+int32_t halRadioEventInQueue(halRadio_t *inst) {
+    if (inst->gpio_interrupt > 0) {
+        return HAL_RADIO_INTERRUPT_IN_QUEUE;
+    }
 
     return HAL_RADIO_SUCCESS;
 }
@@ -714,6 +797,7 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 11);
         return HAL_RADIO_BUSY;
     }
 
@@ -1013,6 +1097,7 @@ int32_t halRadioCancelReceive(halRadio_t *inst) {
     uint32_t tst = 3;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 12);
         return HAL_RADIO_BUSY;
     }
 
@@ -1048,12 +1133,14 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
     uint32_t tst = 4;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 13);
         return HAL_RADIO_BUSY;
     }
  
     // Check if the radio is busy
     if (inst->mode == HAL_RADIO_TX) {
         mutex_exit(&inst->mutex);
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 14);
         return HAL_RADIO_BUSY;
     }
 
@@ -1206,8 +1293,14 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
 
     // Wait for fifo threshold, or payload ready
     while ((!state && !fifo_state) && count < time_ms) {
-        rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state);
-        rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_LEVEL, &fifo_state);
+        if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state)) {
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+
+        if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_LEVEL, &fifo_state)) {
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+
         sleep_us(PACKET_RX_POLL_TIME_MS);
         count += PACKET_RX_POLL_TIME_MS;
     }
@@ -1253,7 +1346,10 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
                 return HAL_RADIO_BUFFER_ERROR;
             }
 
-            rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_NOT_EMPTY, &state);
+            if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_NOT_EMPTY, &state)) {
+                    return HAL_RADIO_DRIVER_ERROR;
+            }
+
             if (state) {
                 // Try to Read 1 byte
                 if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, 1)) {
@@ -1268,7 +1364,10 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
                     return HAL_RADIO_BUFFER_ERROR;
                 }
             } else {
-                rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state);
+                if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state)) {
+                    return HAL_RADIO_DRIVER_ERROR;
+                }
+
                 if (state) {
                     // Try to Read 1 byte
                     if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, 1)) {
@@ -1317,7 +1416,10 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
             // Wait for payload ready
             while (!state && e_time < expected_time) {
                 e_time = time_us_64() - s_time;
-                rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state);
+                if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PAYLOAD_READY, &state)) {
+                    return HAL_RADIO_DRIVER_ERROR;
+                }
+
                 sleep_us(100);
             }
 
@@ -1340,6 +1442,7 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
     uint32_t tst = 5;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 15);
         return HAL_RADIO_BUSY;
     }
 
@@ -1371,6 +1474,7 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
 static int32_t byteWiseWrite(halRadio_t *inst, cBuffer_t *tx_buf, uint8_t num_bytes) {
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 16);
         return HAL_RADIO_BUSY;
     }
 
@@ -1384,13 +1488,17 @@ static int32_t byteWiseWrite(halRadio_t *inst, cBuffer_t *tx_buf, uint8_t num_by
         e_time = time_us_64() - s_time;
 
         // Check if the buffer is full
-        rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_FULL, &state);
+        if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_FULL, &state)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR; // Fatal error
+        }
+
         if (!state) {
             uint8_t next_byte = cBufferReadByte(tx_buf);
             // Try to write 1 byte
             if (!rfm69_write(&inst->rfm, RFM69_REG_FIFO, &next_byte, 1)) {
                 mutex_exit(&inst->mutex);
-                return HAL_RADIO_DRIVER_ERROR;
+                return HAL_RADIO_DRIVER_ERROR; // Fatal error
             }
 
             writen_bytes++;
@@ -1400,7 +1508,7 @@ static int32_t byteWiseWrite(halRadio_t *inst, cBuffer_t *tx_buf, uint8_t num_by
 
     if (writen_bytes != num_bytes) {
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_RECEIVE_FAIL;
+        return HAL_RADIO_SEND_FAIL;
     }
 
     mutex_exit(&inst->mutex);
@@ -1552,6 +1660,7 @@ int32_t halRadioEnterTX(halRadio_t *inst) {
 
     bool taken = mutex_try_enter(&inst->mutex, NULL);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 17);
         return HAL_RADIO_BUSY;
     }
 
@@ -1581,12 +1690,14 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
     uint32_t tst = 6;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 18);
         return HAL_RADIO_BUSY;
     }
 
     // Check if the radio is ready for transmitt
     if (inst->mode == HAL_RADIO_TX) {
         mutex_exit(&inst->mutex);
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 19);
         return HAL_RADIO_BUSY;
     }
 
@@ -1632,6 +1743,7 @@ int32_t halRadioQueueSend(halRadio_t *inst) {
     uint32_t tst = 7;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 20);
         return HAL_RADIO_BUSY;
     }
 
@@ -1663,12 +1775,14 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
     uint32_t tst = 8;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 21);
         return HAL_RADIO_BUSY;
     }
 
     // Check if the radio is ready for transmitt
     if (inst->mode != HAL_RADIO_IDLE) {
         mutex_exit(&inst->mutex);
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 22);
         return HAL_RADIO_BUSY;
     }
 
@@ -1774,11 +1888,21 @@ int32_t halRadioSendPackageBlocking(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
     bool state = false;
     uint32_t counter = 0; // Set a maximum timout for sending
     while (!state && counter < 10) {
-        rfm69_read(&inst->rfm, RFM69_REG_IRQ_FLAGS_2, &buf, 1);
+        if (!rfm69_read(&inst->rfm, RFM69_REG_IRQ_FLAGS_2, &buf, 1)) {
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+
         LOG_DEBUG("IRQ2: %02X\n", buf);
-        rfm69_read(&inst->rfm, RFM69_REG_IRQ_FLAGS_1, &buf, 1);
+
+        if (!rfm69_read(&inst->rfm, RFM69_REG_IRQ_FLAGS_1, &buf, 1)) {
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+
         LOG_DEBUG("IRQ1: %02X\n", buf);
-        rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PACKET_SENT, &state);
+        if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_PACKET_SENT, &state)) {
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+
         sleep_ms(1);
         counter++;
     }
@@ -1888,6 +2012,7 @@ int32_t halRadioCheckBusy(halRadio_t *inst) {
     uint32_t tst = 9;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 23);
         return HAL_RADIO_BUSY;
     }
 
