@@ -279,6 +279,18 @@ static int32_t managePayloadReady(halRadio_t *inst) {
     if (inst->radio_state == HAL_RADIO_REC_END) {
         // Reset the radio state
         inst->radio_state = HAL_RADIO_REC_IDLE;
+    } else if (inst->radio_state != HAL_RADIO_REC_IDLE) {
+        // This state is invalid at this point and the packet is lost
+
+        // Clear the buffer used for receiving data
+        if (cBufferClear(rx_buf) < 0) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_BUFFER_ERROR; // Fatal error
+        }
+
+        mutex_exit(&inst->mutex);
+        // This is not a critical error but this packet is lost
+        return cleanUpDuringRx(inst, HAL_RADIO_RECEIVE_FAIL);
     } else {
         // Clear the buffer used for receiving data
         if (cBufferClear(rx_buf) < 0) {
