@@ -240,7 +240,7 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
  * Input: Pointer to instance
  * Returns: halRadioErr_t
  */
-int32_t halRadioQueueSend(halRadio_t *inst);
+int32_t halRadioQueueSend(halRadio_t *inst, bool wait_for_tx_mode);
 
 /**
  * Queue a packet in the radio, and prepare for sending
@@ -275,7 +275,7 @@ int32_t halRadioReceivePackageBlockingInterface(halRadio_t *inst, halRadioInterf
  * Input: Pointer to CB interface
  * Returns: halRadioErr_t
  */
-int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interface);
+int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interface, bool wait_for_rx_mode);
 
 /**
  * Cancel packet Receive

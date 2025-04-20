@@ -1137,7 +1137,7 @@ int32_t halRadioCancelReceive(halRadio_t *inst) {
     return HAL_RADIO_SUCCESS;
 }
 
-int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interface) {
+int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interface, bool wait_for_rx_mode) {
     if (inst == NULL || interface == NULL || interface->package_cb == NULL || interface->pkt_buffer == NULL) {
         return HAL_RADIO_NULL_ERROR;
     }
@@ -1181,10 +1181,18 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-    // Try to set RX mode
-	if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_RX)) {
-        mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+    if (wait_for_rx_mode) {
+        // Try to set RX mode, and wait to see if it is successfull
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_RX)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+    } else {
+        // Switch to RX mode but dont wait for the mode transition
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_RX)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
     }
 
     inst->mode = HAL_RADIO_RX;
@@ -1747,7 +1755,7 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
     return HAL_RADIO_SUCCESS;
 }
 
-int32_t halRadioQueueSend(halRadio_t *inst) {
+int32_t halRadioQueueSend(halRadio_t *inst, bool wait_for_tx_mode) {
     if (inst == NULL) {
         return HAL_RADIO_NULL_ERROR;
     }
@@ -1766,10 +1774,18 @@ int32_t halRadioQueueSend(halRadio_t *inst) {
         return HAL_RADIO_SUCCESS;
     }
 
-	// Switch to TX mode to send FIFO contents
-	if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
-        mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+    if (wait_for_tx_mode) {
+        // Switch to TX mode to send FIFO contents, and wait for the radio to enter TX
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+    } else {
+        // Switch to TX mode to send FIFO contents, but do not wait for the radio to enter TX
+        if (!rfm69_write_masked(&inst->rfm, RFM69_REG_OP_MODE, RFM69_OP_MODE_TX, RFM69_OP_MODE_MASK)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
     }
 
     // Radio is in TX state
