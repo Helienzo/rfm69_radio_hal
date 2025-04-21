@@ -3,28 +3,22 @@
  * @author:     Lucas Wennerholm <lucas.wennerholm@gmail.com>
  * @brief:      Implementation of radio HAL layer
  *
- * @license: MIT License
+ * @license: Apache 2.0
  *
- * Copyright (c) 2024 Lucas Wennerholm
+ * Copyright 2025 Lucas Wennerholm
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
-*/
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include "hal_radio.h"
 
@@ -1137,7 +1131,7 @@ int32_t halRadioCancelReceive(halRadio_t *inst) {
     return HAL_RADIO_SUCCESS;
 }
 
-int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interface) {
+int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interface, bool wait_for_rx_mode) {
     if (inst == NULL || interface == NULL || interface->package_cb == NULL || interface->pkt_buffer == NULL) {
         return HAL_RADIO_NULL_ERROR;
     }
@@ -1181,10 +1175,18 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-    // Try to set RX mode
-	if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_RX)) {
-        mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+    if (wait_for_rx_mode) {
+        // Try to set RX mode, and wait to see if it is successfull
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_RX)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+    } else {
+        // Switch to RX mode but dont wait for the mode transition
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_RX)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
     }
 
     inst->mode = HAL_RADIO_RX;
@@ -1747,7 +1749,7 @@ int32_t halRadioSendPackageNB(halRadio_t *inst, halRadioInterface_t *interface, 
     return HAL_RADIO_SUCCESS;
 }
 
-int32_t halRadioQueueSend(halRadio_t *inst) {
+int32_t halRadioQueueSend(halRadio_t *inst, bool wait_for_tx_mode) {
     if (inst == NULL) {
         return HAL_RADIO_NULL_ERROR;
     }
@@ -1766,10 +1768,18 @@ int32_t halRadioQueueSend(halRadio_t *inst) {
         return HAL_RADIO_SUCCESS;
     }
 
-	// Switch to TX mode to send FIFO contents
-	if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
-        mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+    if (wait_for_tx_mode) {
+        // Switch to TX mode to send FIFO contents, and wait for the radio to enter TX
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_TX)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+    } else {
+        // Switch to TX mode to send FIFO contents, but do not wait for the radio to enter TX
+        if (!rfm69_write_masked(&inst->rfm, RFM69_REG_OP_MODE, RFM69_OP_MODE_TX, RFM69_OP_MODE_MASK)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
     }
 
     // Radio is in TX state
