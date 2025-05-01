@@ -339,7 +339,7 @@ static int32_t managePayloadReady(halRadio_t *inst) {
             cb_res = inst->package_callback->package_cb(inst->package_callback, &inst->active_package);
         }
     } else {
-        LOG("CRC FAIL\n");
+        LOG_DEBUG("CRC FAIL\n");
         if (cBufferClear(rx_buf) != C_BUFFER_SUCCESS) {
             return HAL_RADIO_BUFFER_ERROR; // Fatal error
         }
