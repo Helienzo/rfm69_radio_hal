@@ -1145,9 +1145,26 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
  
     // Check if the radio is busy
     if (inst->mode == HAL_RADIO_TX) {
-        mutex_exit(&inst->mutex);
-        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 14);
-        return HAL_RADIO_BUSY;
+        LOG("Radio TX interrupted\n");
+
+        // Notify that the package send failed
+        int32_t cb_res = HAL_RADIO_SUCCESS;
+        if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
+            cb_res = inst->package_callback->pkg_sent_cb(inst->package_callback, &inst->active_package, HAL_RADIO_SEND_INTERRUPTED);
+        } else {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_NULL_ERROR;
+        }
+
+        // Check if we shuld proceed or give up
+        if (cb_res != HAL_RADIO_SUCCESS) {
+            mutex_exit(&inst->mutex);
+            return cb_res;
+        }
+
+        // Reset the active package address
+        inst->active_package.address = 0;
+        // Now move on with going to Rx!
     }
 
     // Check if the radio is already in the correct state
