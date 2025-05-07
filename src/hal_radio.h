@@ -164,7 +164,7 @@ typedef struct {
     uint8_t  rx_address;
     uint8_t  broadcast_address;
     uint8_t  bitrate;
-    uint16_t channel;
+    uint32_t channel;
     int8_t   power_dbm;
 } halRadioConfig_t;
 

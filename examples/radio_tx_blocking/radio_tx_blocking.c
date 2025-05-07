@@ -17,7 +17,7 @@
 #define RADIO_MY_ADDR         (0x02) // Change this to target specific radios
 #define RADIO_TARGET_ADDR     (0x01) // Change this to target specific radios
 #define RADIO_BROADCAST_ADDR  (0xFF)
-#define RADIO_DEFAULT_CHANNEL (868)
+#define RADIO_DEFAULT_CHANNEL (868000000)
 #define RADIO_RX_BUFFER_SIZE  (128 + C_BUFFER_ARRAY_OVERHEAD)
 #define RADIO_TX_BUFFER_SIZE  (128 + C_BUFFER_ARRAY_OVERHEAD) 
 #define RADIO_TX_POWER_DBM    (0)
