@@ -27,7 +27,7 @@
 #include "pico/stdlib.h"
 #include "pico/mutex.h"
 #include "hardware/spi.h"
-#include "rfm69_rp2040.h"
+#include "rp2x_rfm69.h"
 #include "hal_gpio.h"
 #include "c_buffer.h"
 
@@ -87,17 +87,18 @@
 typedef enum {
     HAL_RADIO_INTERRUPT_IN_QUEUE = 1,
     HAL_RADIO_SUCCESS            = 0,
-    HAL_RADIO_NULL_ERROR    = -10001,
-    HAL_RADIO_GEN_ERROR     = -10002,
-    HAL_RADIO_DRIVER_ERROR  = -10003,
-    HAL_RADIO_GPIO_ERROR    = -10004,
-    HAL_RADIO_INVALID_SIZE  = -10005,
-    HAL_RADIO_SEND_FAIL     = -10006,
-    HAL_RADIO_RECEIVE_FAIL  = -10007,
-    HAL_RADIO_BUSY          = -10008,
-    HAL_RADIO_BUFFER_ERROR  = -10009,
-    HAL_RADIO_INVALID_RATE  = -10010,
-    HAL_RADIO_CONFIG_ERROR  = -10011,
+    HAL_RADIO_NULL_ERROR         = -10001,
+    HAL_RADIO_GEN_ERROR          = -10002,
+    HAL_RADIO_DRIVER_ERROR       = -10003,
+    HAL_RADIO_GPIO_ERROR         = -10004,
+    HAL_RADIO_INVALID_SIZE       = -10005,
+    HAL_RADIO_SEND_FAIL          = -10006,
+    HAL_RADIO_RECEIVE_FAIL       = -10007,
+    HAL_RADIO_BUSY               = -10008,
+    HAL_RADIO_BUFFER_ERROR       = -10009,
+    HAL_RADIO_INVALID_RATE       = -10010,
+    HAL_RADIO_CONFIG_ERROR       = -10011,
+    HAL_RADIO_SEND_INTERRUPTED   = -10012,
 } halRadioErr_t;
 
 typedef enum {
@@ -163,7 +164,7 @@ typedef struct {
     uint8_t  rx_address;
     uint8_t  broadcast_address;
     uint8_t  bitrate;
-    uint16_t channel;
+    uint32_t channel;
     int8_t   power_dbm;
 } halRadioConfig_t;
 
