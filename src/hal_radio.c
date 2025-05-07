@@ -986,20 +986,18 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-    // Read and verify the node address
-    rfm69_node_address_get(&inst->rfm, &reg_read);
-
     /*
+    // Read and verify the node address
     if (!rfm69_node_address_get(&inst->rfm, &reg_read)) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR;
     }
-    */
 
     if (reg_read != inst->config.rx_address) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_CONFIG_ERROR;
     }
+    */
 
     // Store and set the broadcast address
     inst->config.broadcast_address = hal_config.broadcast_address;
