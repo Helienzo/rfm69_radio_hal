@@ -921,6 +921,11 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         return HAL_RADIO_CONFIG_ERROR;
     }
 
+
+    rfm69_modulation_shaping_set(&inst->rfm, RFM69_FSK_GAUSSIAN_0_5);
+    rfm69_modulation_afc_beta(&inst->rfm, true);
+    rfm69_modulation_afc(&inst->rfm, 2);
+
     // Write channel frequency
     inst->config.channel = hal_config.channel;
     if (!rfm69_frequency_set(&inst->rfm, inst->config.channel)) {
