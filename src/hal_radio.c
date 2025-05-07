@@ -880,7 +880,7 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
             // Set the bandwidth to the maximum 500kHz
             bw_mantissa   = RFM69_RXBW_MANTISSA_16;
             bw_exponent   = 0;
-            freq_dev      = 250000;
+            freq_dev      = 150000;
             rfm69_bitrate = RFM69_MODEM_BITRATE_300;
             break;
         default:
