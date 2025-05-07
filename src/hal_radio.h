@@ -27,7 +27,7 @@
 #include "pico/stdlib.h"
 #include "pico/mutex.h"
 #include "hardware/spi.h"
-#include "rfm69_rp2040.h"
+#include "rp2x_rfm69.h"
 #include "hal_gpio.h"
 #include "c_buffer.h"
 
