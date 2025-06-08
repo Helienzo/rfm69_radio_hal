@@ -152,7 +152,7 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
 
     // Set the radio to RX
     inst->hal_interface.pkt_buffer = &inst->rx_buffer;
-    int32_t res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface);
+    int32_t res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, true);
 
     if (res != HAL_RADIO_SUCCESS) {
         LOG("RADIO RX FAILED! %i\n", res);
@@ -216,7 +216,7 @@ int main()
 
     /* Non blocking receive */
     // Set the radio to RX
-    res = halRadioReceivePackageNB(&my_instance.hal_radio_inst, &my_instance.hal_interface);
+    res = halRadioReceivePackageNB(&my_instance.hal_radio_inst, &my_instance.hal_interface, true);
     if (res != HAL_RADIO_SUCCESS) {
         LOG("RADIO RX FAILED! %i\n", res);
         device_error();
