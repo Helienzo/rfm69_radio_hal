@@ -921,6 +921,49 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         return HAL_RADIO_CONFIG_ERROR;
     }
 
+    if (!rfm69_modulation_shaping_set(&inst->rfm, RFM69_FSK_GAUSSIAN_0_5)) {
+        mutex_exit(&inst->mutex);
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    RFM69_MODULATION_SHAPING shape_read = RFM69_NO_SHAPING;
+    if (!rfm69_modulation_shaping_get(&inst->rfm, &shape_read)) {
+        mutex_exit(&inst->mutex);
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    if (!rfm69_modulation_afc_beta_set(&inst->rfm, true)) {
+        mutex_exit(&inst->mutex);
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    bool beta_on = false;
+    if (!rfm69_modulation_afc_beta_get(&inst->rfm, &beta_on)) {
+        mutex_exit(&inst->mutex);
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    if (!beta_on) {
+        mutex_exit(&inst->mutex);
+        return HAL_RADIO_CONFIG_ERROR;
+    }
+
+    if (!rfm69_modulation_afc_set(&inst->rfm, 2)) {
+        mutex_exit(&inst->mutex);
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    uint8_t afc = 0;
+    if (!rfm69_modulation_afc_get(&inst->rfm, &afc)) {
+        mutex_exit(&inst->mutex);
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
+    if (afc != 2) {
+        mutex_exit(&inst->mutex);
+        return HAL_RADIO_CONFIG_ERROR;
+    }
+
     // Write channel frequency
     inst->config.channel = hal_config.channel;
     if (!rfm69_frequency_set(&inst->rfm, inst->config.channel)) {
@@ -986,7 +1029,6 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-    /*
     // Read and verify the node address
     if (!rfm69_node_address_get(&inst->rfm, &reg_read)) {
         mutex_exit(&inst->mutex);
@@ -997,7 +1039,6 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_CONFIG_ERROR;
     }
-    */
 
     // Store and set the broadcast address
     inst->config.broadcast_address = hal_config.broadcast_address;
