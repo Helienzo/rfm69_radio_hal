@@ -1919,7 +1919,9 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR;
     }
-	
+
+    // Enable gpio callbacks
+    inst->package_callback = interface;
     if (cBufferClear(inst->package_callback->pkt_buffer) != C_BUFFER_SUCCESS) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_BUFFER_ERROR;
@@ -1931,8 +1933,6 @@ int32_t halRadioQueuePackage(halRadio_t *inst, halRadioInterface_t *interface, u
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-	// Enable gpio callbacks
-    inst->package_callback = interface;
     if (halGpioEnableIrqCbRisingEdge(&inst->gpio_dio0, HAL_RADIO_PIN_DIO0) != HAL_GPIO_SUCCESS) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_GPIO_ERROR;
