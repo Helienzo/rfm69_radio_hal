@@ -92,7 +92,7 @@ static int32_t managePacketSent(halRadio_t *inst) {
     // TODO we must check if this is a bad interrupt, a duplicate message sent or something else.
     if (!state) {
         // Try to return to default mode
-        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
             mutex_exit(&inst->mutex);
             return HAL_RADIO_DRIVER_ERROR;
         }
@@ -140,7 +140,7 @@ static int32_t managePacketSent(halRadio_t *inst) {
     switch(cb_res) {
         case HAL_RADIO_CB_SUCCESS:
             // Try to return radio to default mode
-            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
                 mutex_exit(&inst->mutex);
                 return HAL_RADIO_DRIVER_ERROR;
             }
@@ -165,7 +165,7 @@ static int32_t managePacketSent(halRadio_t *inst) {
             break;
         default:
             // Try to return radio to default mode
-            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
                 mutex_exit(&inst->mutex);
                 return HAL_RADIO_DRIVER_ERROR;
             }
@@ -250,7 +250,7 @@ static int32_t managePayloadReady(halRadio_t *inst) {
     // Check if any package was received, and that the interrupt was valid
     if (!state) {
         // Try to return to default mode
-        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
             mutex_exit(&inst->mutex);
             return HAL_RADIO_DRIVER_ERROR; // Fatal error
         }
@@ -358,7 +358,7 @@ static int32_t managePayloadReady(halRadio_t *inst) {
     switch(cb_res) {
         case HAL_RADIO_CB_SUCCESS:
             // Try to return radio to default mode
-            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
                 mutex_exit(&inst->mutex);
                 return HAL_RADIO_DRIVER_ERROR; // Fatal error
             }
@@ -388,7 +388,7 @@ static int32_t managePayloadReady(halRadio_t *inst) {
             break;
         default:
             // Try to return radio to default mode
-            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
                 mutex_exit(&inst->mutex);
                 return HAL_RADIO_DRIVER_ERROR; // Fatal error
             }
@@ -450,7 +450,7 @@ static int32_t manageDio0Interrupt(halRadio_t *inst) {
     }
 
     // Try to return radio to default mode
-    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR; // Fatal error
     }
@@ -725,7 +725,7 @@ static int32_t manageDio1Interrupt(halRadio_t *inst) {
     }
 
     // Try to return radio to default mode
-    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR; // Fatal error
     }
@@ -1133,7 +1133,7 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
     }
 
     // Set the radio in default mode
-    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR;
     }
@@ -1152,7 +1152,7 @@ int32_t halRadioCancelReceive(halRadio_t *inst) {
     }
 
     // Put radio back to default
-    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR;
     }
@@ -1244,10 +1244,11 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
         }
     } else {
         // Switch to RX mode but dont wait for the mode transition
-        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_RX)) {
+        if (!rfm69_write_masked(&inst->rfm, RFM69_REG_OP_MODE, RFM69_OP_MODE_RX, RFM69_OP_MODE_MASK)) {
             mutex_exit(&inst->mutex);
             return HAL_RADIO_DRIVER_ERROR;
         }
+        inst->rfm.op_mode = RFM69_OP_MODE_RX;
     }
 
     inst->mode = HAL_RADIO_RX;
@@ -1286,7 +1287,7 @@ int32_t halRadioReceivePackageBlockingInterface(halRadio_t *inst, halRadioInterf
     switch(cb_res) {
         case HAL_RADIO_CB_SUCCESS:
             // Try to return radio to default mode
-            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
                 return HAL_RADIO_DRIVER_ERROR;
             }
 
@@ -1311,7 +1312,7 @@ int32_t halRadioReceivePackageBlockingInterface(halRadio_t *inst, halRadioInterf
             break;
         default:
             // Try to return radio to default mode
-            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
                 return HAL_RADIO_DRIVER_ERROR;
             }
 
@@ -1383,7 +1384,7 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
     // Check if any package was received
     if (!state && !fifo_state) {
         // Try to return to default mode
-        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
             return HAL_RADIO_DRIVER_ERROR;
         }
 
@@ -1463,7 +1464,7 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
         if (read_bytes != inst->current_packet_size) {
             LOG("Packet timeout received %u\n", read_bytes);
             // Try to return to default mode
-            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+            if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
                 return HAL_RADIO_DRIVER_ERROR;
             }
             return HAL_RADIO_RECEIVE_FAIL;
@@ -1501,7 +1502,7 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
             // Check if any package was received
             if (!state) {
                 // Try to return to default mode
-                if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+                if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
                     return HAL_RADIO_DRIVER_ERROR;
                 }
 
@@ -1522,7 +1523,7 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
     }
 
     // Put radio back to default
-    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR;
     }
@@ -1841,6 +1842,7 @@ int32_t halRadioQueueSend(halRadio_t *inst, bool wait_for_tx_mode) {
             mutex_exit(&inst->mutex);
             return HAL_RADIO_DRIVER_ERROR;
         }
+        inst->rfm.op_mode = RFM69_OP_MODE_TX;
     }
 
     // Radio is in TX state
@@ -1993,7 +1995,7 @@ int32_t halRadioSendPackageBlocking(halRadio_t *inst, cBuffer_t *pkt_buffer, uin
     inst->mode = HAL_RADIO_IDLE;
 
     // Put radio back to default mode
-    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_DEFAULT)) {
+    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
