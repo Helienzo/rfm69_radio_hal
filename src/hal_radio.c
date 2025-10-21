@@ -825,62 +825,63 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
     uint8_t             bw_exponent   = 0;
 
     // Get the bitrate, and set the other parameters
+    // All bitrates configured for modulation index h=0.67
     inst->config.bitrate = hal_config.bitrate;
     switch(inst->config.bitrate) {
         case HAL_RADIO_BITRATE_12_5:
-            // Set the bandwidth to 50kHz
-            bw_mantissa   = RFM69_RXBW_MANTISSA_20;
-            bw_exponent   = 4;
-            freq_dev      = 25000;
+            // BW=25kHz, fdev=4.2kHz, h=0.672
+            bw_mantissa   = RFM69_RXBW_MANTISSA_16;
+            bw_exponent   = 5;
+            freq_dev      = 4200;
             rfm69_bitrate = RFM69_MODEM_BITRATE_12_5;
             break;
         case HAL_RADIO_BITRATE_25:
-            // Set the bandwidth to 50kHz
-            bw_mantissa   = RFM69_RXBW_MANTISSA_20;
-            bw_exponent   = 3;
-            freq_dev      = 50000;
+            // BW=50kHz, fdev=8.375kHz, h=0.67
+            bw_mantissa   = RFM69_RXBW_MANTISSA_16;
+            bw_exponent   = 4;
+            freq_dev      = 8375;
             rfm69_bitrate = RFM69_MODEM_BITRATE_25;
             break;
         case HAL_RADIO_BITRATE_50:
-            // Set the bandwidth to 100kHz
+            // BW=100kHz, fdev=16.75kHz, h=0.67
             bw_mantissa   = RFM69_RXBW_MANTISSA_20;
-            bw_exponent   = 2;
-            freq_dev      = 70000;
+            bw_exponent   = 3;
+            freq_dev      = 16750;
             rfm69_bitrate = RFM69_MODEM_BITRATE_50;
             break;
         case HAL_RADIO_BITRATE_100:
-            // Set the bandwidth to 125kHz
-            bw_mantissa   = RFM69_RXBW_MANTISSA_16;
+            // BW=200kHz, fdev=33.5kHz, h=0.67
+            bw_mantissa   = RFM69_RXBW_MANTISSA_20;
             bw_exponent   = 2;
-            freq_dev      = 70000;
+            freq_dev      = 33500;
             rfm69_bitrate = RFM69_MODEM_BITRATE_100;
             break;
         case HAL_RADIO_BITRATE_150:
-            // Set the bandwidth to 250kHz
-            bw_mantissa   = RFM69_RXBW_MANTISSA_16;
+            // BW=333kHz, fdev=50.25kHz, h=0.67
+            bw_mantissa   = RFM69_RXBW_MANTISSA_24;
             bw_exponent   = 1;
-            freq_dev      = 125000;
+            freq_dev      = 50250;
             rfm69_bitrate = RFM69_MODEM_BITRATE_150;
             break;
         case HAL_RADIO_BITRATE_200:
-            // Set the bandwidth to 400kHz
+            // BW=400kHz, fdev=67kHz, h=0.67
             bw_mantissa   = RFM69_RXBW_MANTISSA_20;
-            bw_exponent   = 0;
-            freq_dev      = 200000;
+            bw_exponent   = 1;
+            freq_dev      = 67000;
             rfm69_bitrate = RFM69_MODEM_BITRATE_200;
             break;
         case HAL_RADIO_BITRATE_250:
-            // Set the bandwidth to the maximum 500kHz
+            // BW=500kHz, fdev=83.75kHz, h=0.67
             bw_mantissa   = RFM69_RXBW_MANTISSA_16;
             bw_exponent   = 0;
-            freq_dev      = 250000;
+            freq_dev      = 83750;
             rfm69_bitrate = RFM69_MODEM_BITRATE_250;
             break;
         case HAL_RADIO_BITRATE_300:
-            // Set the bandwidth to the maximum 500kHz
+            // BW=500kHz, fdev=100kHz, h=0.667
             bw_mantissa   = RFM69_RXBW_MANTISSA_16;
             bw_exponent   = 0;
-            freq_dev      = 150000;
+            freq_dev      = 100000;
             rfm69_bitrate = RFM69_MODEM_BITRATE_300;
             break;
         default:
