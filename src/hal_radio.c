@@ -828,12 +828,47 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
     // All bitrates configured for modulation index h=0.67
     inst->config.bitrate = hal_config.bitrate;
     switch(inst->config.bitrate) {
+        case HAL_RADIO_BITRATE_1_2:
+            // BW=3.125kHz, fdev=0.6kHz (minimum), h=1.0
+            bw_mantissa   = RFM69_RXBW_MANTISSA_20;
+            bw_exponent   = 7;
+            freq_dev      = 600;
+            rfm69_bitrate = RFM69_MODEM_BITRATE_1_2;
+            break;
+        case HAL_RADIO_BITRATE_2_4:
+            // BW=3.125kHz, fdev=0.8kHz, h=0.667
+            bw_mantissa   = RFM69_RXBW_MANTISSA_20;
+            bw_exponent   = 7;
+            freq_dev      = 800;
+            rfm69_bitrate = RFM69_MODEM_BITRATE_2_4;
+            break;
+        case HAL_RADIO_BITRATE_4_8:
+            // BW=7.8kHz, fdev=1.6kHz, h=0.667
+            bw_mantissa   = RFM69_RXBW_MANTISSA_24;
+            bw_exponent   = 6;
+            freq_dev      = 1600;
+            rfm69_bitrate = RFM69_MODEM_BITRATE_4_8;
+            break;
+        case HAL_RADIO_BITRATE_9_6:
+            // BW=15.6kHz, fdev=3.2kHz, h=0.667
+            bw_mantissa   = RFM69_RXBW_MANTISSA_24;
+            bw_exponent   = 5;
+            freq_dev      = 3200;
+            rfm69_bitrate = RFM69_MODEM_BITRATE_9_6;
+            break;
         case HAL_RADIO_BITRATE_12_5:
             // BW=25kHz, fdev=4.2kHz, h=0.672
             bw_mantissa   = RFM69_RXBW_MANTISSA_16;
             bw_exponent   = 5;
             freq_dev      = 4200;
             rfm69_bitrate = RFM69_MODEM_BITRATE_12_5;
+            break;
+        case HAL_RADIO_BITRATE_19_2:
+            // BW=31.25kHz, fdev=6.4kHz, h=0.667
+            bw_mantissa   = RFM69_RXBW_MANTISSA_20;
+            bw_exponent   = 5;
+            freq_dev      = 6400;
+            rfm69_bitrate = RFM69_MODEM_BITRATE_19_2;
             break;
         case HAL_RADIO_BITRATE_25:
             // BW=50kHz, fdev=8.375kHz, h=0.67
@@ -842,6 +877,13 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
             freq_dev      = 8375;
             rfm69_bitrate = RFM69_MODEM_BITRATE_25;
             break;
+        case HAL_RADIO_BITRATE_38_4:
+            // BW=62.5kHz, fdev=12.9kHz, h=0.672
+            bw_mantissa   = RFM69_RXBW_MANTISSA_16;
+            bw_exponent   = 4;
+            freq_dev      = 12900;
+            rfm69_bitrate = RFM69_MODEM_BITRATE_38_4;
+            break;
         case HAL_RADIO_BITRATE_50:
             // BW=100kHz, fdev=16.75kHz, h=0.67
             bw_mantissa   = RFM69_RXBW_MANTISSA_20;
@@ -849,12 +891,26 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
             freq_dev      = 16750;
             rfm69_bitrate = RFM69_MODEM_BITRATE_50;
             break;
+        case HAL_RADIO_BITRATE_76_8:
+            // BW=125kHz, fdev=25.7kHz, h=0.669
+            bw_mantissa   = RFM69_RXBW_MANTISSA_16;
+            bw_exponent   = 3;
+            freq_dev      = 25700;
+            rfm69_bitrate = RFM69_MODEM_BITRATE_76_8;
+            break;
         case HAL_RADIO_BITRATE_100:
             // BW=200kHz, fdev=33.5kHz, h=0.67
             bw_mantissa   = RFM69_RXBW_MANTISSA_20;
             bw_exponent   = 2;
             freq_dev      = 33500;
             rfm69_bitrate = RFM69_MODEM_BITRATE_100;
+            break;
+        case HAL_RADIO_BITRATE_115_2:
+            // BW=250kHz, fdev=38.6kHz, h=0.670
+            bw_mantissa   = RFM69_RXBW_MANTISSA_16;
+            bw_exponent   = 2;
+            freq_dev      = 38600;
+            rfm69_bitrate = RFM69_MODEM_BITRATE_115_2;
             break;
         case HAL_RADIO_BITRATE_150:
             // BW=333kHz, fdev=50.25kHz, h=0.67
@@ -2027,22 +2083,55 @@ int32_t halRadioBitRateToDelayUs(halRadio_t *inst, halRadioBitrate_t bitrate, ui
     int32_t time_us = 0;
 
     switch(bitrate) {
+        case HAL_RADIO_BITRATE_1_2: {
+            // Calculate the time i takes to send a single bit, round up
+            int32_t bit_time_us = 1000000/1200 + 1;
+            time_us = bit_time_us * num_bytes * 8;
+        } break;
+        case HAL_RADIO_BITRATE_2_4: {
+            int32_t bit_time_us = 1000000/2400 + 1;
+            time_us = bit_time_us * num_bytes * 8;
+        } break;
+        case HAL_RADIO_BITRATE_4_8: {
+            int32_t bit_time_us = 1000000/4800 + 1;
+            time_us = bit_time_us * num_bytes * 8;
+        } break;
+        case HAL_RADIO_BITRATE_9_6: {
+            int32_t bit_time_us = 1000000/9600 + 1;
+            time_us = bit_time_us * num_bytes * 8;
+        } break;
         case HAL_RADIO_BITRATE_12_5: {
             // Calculate the time i takes to send a single bit, round up
             int32_t bit_time_us = 1000000/12500 + 1;
+            time_us = bit_time_us * num_bytes * 8;
+        } break;
+        case HAL_RADIO_BITRATE_19_2: {
+            int32_t bit_time_us = 1000000/19200 + 1;
             time_us = bit_time_us * num_bytes * 8;
         } break;
         case HAL_RADIO_BITRATE_25: {
             int32_t bit_time_us = 1000000/25000 + 1;
             time_us = bit_time_us * num_bytes * 8;
         } break;
+        case HAL_RADIO_BITRATE_38_4: {
+            int32_t bit_time_us = 1000000/38400 + 1;
+            time_us = bit_time_us * num_bytes * 8;
+        } break;
         case HAL_RADIO_BITRATE_50: {
             int32_t bit_time_us = 1000000/50000 + 1;
+            time_us = bit_time_us * num_bytes * 8;
+        } break;
+        case HAL_RADIO_BITRATE_76_8: {
+            int32_t bit_time_us = 1000000/76800 + 1;
             time_us = bit_time_us * num_bytes * 8;
         } break;
         case HAL_RADIO_BITRATE_100: {
             // 51us interrupt delay
             int32_t bit_time_us = 1000000/100000 + 1;
+            time_us = bit_time_us * num_bytes * 8;
+        } break;
+        case HAL_RADIO_BITRATE_115_2: {
+            int32_t bit_time_us = 1000000/115200 + 1;
             time_us = bit_time_us * num_bytes * 8;
         } break;
         case HAL_RADIO_BITRATE_150: {
