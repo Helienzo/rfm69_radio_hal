@@ -21,16 +21,31 @@
  */
 
 #include "hal_radio.h"
+#include <stdarg.h>
 
-#ifndef LOG
-#define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
+// Weakly defined logging function - can be overridden by user
+__attribute__((weak)) void radio_log(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    vprintf(format, args);
+    va_end(args);
+}
+
+#ifndef HAL_RADIO_LOG_ENABLE
+#define HAL_RADIO_LOG_ENABLE (1)
+#endif /* HAL_RADIO_LOG_DISABLE */
+
+#if HAL_RADIO_LOG_ENABLE == 1
+#define LOG(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#define LOG_DEBUG_BUSY(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#else
+#define LOG(f_, ...)
+#define LOG_DEBUG_BUSY(f_, ...)
 #endif
 
-#ifndef LOG_DEBUG_BUSY
-#define LOG_DEBUG_BUSY(f_, ...) printf((f_), ##__VA_ARGS__)
-#endif
-
-#ifndef LOG_DEBUG
+#ifdef HAL_RADIO_LOG_DEBUG_ENABLE
+#define LOG_DEBUG(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#else
 #define LOG_DEBUG(f_, ...)
 #endif
 
