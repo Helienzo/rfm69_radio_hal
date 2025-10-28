@@ -221,6 +221,13 @@ int32_t halRadioEventInQueue(halRadio_t *inst);
 int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config);
 
 /**
+ * DeInitialize a radio instance
+ * Input: Pointer to instance
+ * Returns: halRadioErr_t
+ */
+int32_t halRadioDeInit(halRadio_t *inst);
+
+/**
  * Send package and wait for completion
  * Input: Pointer to instance
  * Input: Pointer buffer structure

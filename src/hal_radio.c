@@ -788,6 +788,8 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         return HAL_RADIO_NULL_ERROR;
     }
 
+    memset(inst, 0, sizeof(halRadio_t));
+
     // Initialize the spi
     spi_init(HAL_RADIO_SPI_INST, HAL_RADIO_SPI_BAUD_RATE);
     gpio_set_function(HAL_RADIO_PIN_MISO, GPIO_FUNC_SPI);
@@ -1209,6 +1211,35 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         mutex_exit(&inst->mutex);
         return HAL_RADIO_DRIVER_ERROR;
     }
+
+    mutex_exit(&inst->mutex);
+    return HAL_RADIO_SUCCESS;
+}
+
+int32_t halRadioDeInit(halRadio_t *inst) {
+    mutex_enter_blocking(&inst->mutex);
+
+    // Reset the GPIO callback
+    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO0)) != HAL_GPIO_SUCCESS) {
+        LOG("Failed to reset GPIO0 IRQ\n");
+    }
+
+    // Reset the GPIO callback
+    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
+        LOG("Failed to reset GPIO1 IRQ\n");
+    }
+
+    rfm69_reset(&inst->rfm);
+
+    memset(&inst->rfm, sizeof(inst->rfm), 0);
+
+    spi_deinit(HAL_RADIO_SPI_INST);
+
+    inst->radio_state         = HAL_RADIO_REC_IDLE;
+    inst->current_packet_size = 0;
+    inst->gpio_interrupt      = 0;
+    inst->mode                = HAL_RADIO_IDLE;
+    inst->package_callback    = NULL;
 
     mutex_exit(&inst->mutex);
     return HAL_RADIO_SUCCESS;
