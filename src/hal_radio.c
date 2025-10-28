@@ -33,7 +33,7 @@ __attribute__((weak)) void radio_log(const char *format, ...) {
 
 #ifndef HAL_RADIO_LOG_ENABLE
 #define HAL_RADIO_LOG_ENABLE (1)
-#endif /* HAL_RADIO_LOG_DISABLE */
+#endif /* HAL_RADIO_LOG_ENABLE */
 
 #if HAL_RADIO_LOG_ENABLE == 1
 #define LOG(f_, ...) radio_log((f_), ##__VA_ARGS__)
@@ -41,13 +41,13 @@ __attribute__((weak)) void radio_log(const char *format, ...) {
 #else
 #define LOG(f_, ...)
 #define LOG_DEBUG_BUSY(f_, ...)
-#endif
+#endif /* HAL_RADIO_LOG_ENABLE */
 
 #ifdef HAL_RADIO_LOG_DEBUG_ENABLE
 #define LOG_DEBUG(f_, ...) radio_log((f_), ##__VA_ARGS__)
 #else
 #define LOG_DEBUG(f_, ...)
-#endif
+#endif /* HAL_RADIO_LOG_DEBUG_ENABLE */
 
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
