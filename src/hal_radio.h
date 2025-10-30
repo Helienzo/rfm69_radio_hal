@@ -133,6 +133,7 @@ typedef enum {
     HAL_RADIO_TX_IDLE, // Radio is in TX but not transmitting
     HAL_RADIO_TX_QUEUE, // FiFo prepared for TX
     HAL_RADIO_RX,
+    HAL_RADIO_RX_ACTIVE,
 } halRadioMode_t;
 
 // Packet meta data

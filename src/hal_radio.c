@@ -125,8 +125,9 @@ static int32_t managePacketSent(halRadio_t *inst) {
         }
 
         mutex_exit(&inst->mutex);
-        // Reset the radio mode
-        inst->mode = HAL_RADIO_IDLE;
+        // Reset the radio state
+        inst->radio_state = HAL_RADIO_REC_IDLE;
+        inst->mode        = HAL_RADIO_IDLE;
 
         // Notify that the package send failed
         // TODO it is not really a send fail, this is a weird interrupt, might not be related to any packet
@@ -454,8 +455,9 @@ static int32_t manageDio0Interrupt(halRadio_t *inst) {
             break;
     }
 
-    // Reset the radio mode
-    inst->mode = HAL_RADIO_IDLE;
+    // Reset the radio state
+    inst->radio_state = HAL_RADIO_REC_IDLE;
+    inst->mode        = HAL_RADIO_IDLE;
 
     // Protect the radio during hal access
     bool taken = mutex_try_enter(&inst->mutex, NULL);
@@ -729,8 +731,9 @@ static int32_t manageDio1Interrupt(halRadio_t *inst) {
             break;
     }
 
-    // Reset the radio mode
-    inst->mode = HAL_RADIO_IDLE;
+    // Reset the radio state
+    inst->radio_state = HAL_RADIO_REC_IDLE;
+    inst->mode        = HAL_RADIO_IDLE;
 
     // Protect access to the radio
     bool taken = mutex_try_enter(&inst->mutex, NULL);
@@ -1272,7 +1275,8 @@ int32_t halRadioCancelReceive(halRadio_t *inst) {
         return HAL_RADIO_GPIO_ERROR;
     }
 
-    inst->mode = HAL_RADIO_IDLE;
+    inst->radio_state = HAL_RADIO_REC_IDLE;
+    inst->mode        = HAL_RADIO_IDLE;
 
     mutex_exit(&inst->mutex);
     return HAL_RADIO_SUCCESS;
@@ -1643,7 +1647,8 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
         return HAL_RADIO_GPIO_ERROR;
     }
 
-    inst->mode = HAL_RADIO_IDLE;
+    inst->radio_state = HAL_RADIO_REC_IDLE;
+    inst->mode        = HAL_RADIO_IDLE;
 
     mutex_exit(&inst->mutex);
 
@@ -1855,7 +1860,7 @@ int32_t halRadioEnterTX(halRadio_t *inst) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-    inst->mode = HAL_RADIO_IDLE;
+    inst->mode = HAL_RADIO_TX_IDLE;
 
     mutex_exit(&inst->mutex);
     return HAL_RADIO_SUCCESS;
@@ -2115,6 +2120,12 @@ int32_t halRadioGetMode(halRadio_t *inst) {
     if (inst == NULL) {
         return HAL_RADIO_NULL_ERROR;
     }
+
+    if ((inst->radio_state == HAL_RADIO_REC_DATA || inst->radio_state == HAL_RADIO_REC_END) && inst->mode == HAL_RADIO_RX) {
+        // This is a special case where the RX is currently actively receiving a packet
+        return HAL_RADIO_RX_ACTIVE;
+    }
+
     return inst->mode;
 }
 
