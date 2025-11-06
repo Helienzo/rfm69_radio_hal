@@ -22,6 +22,7 @@
 
 #include "hal_radio.h"
 #include <stdarg.h>
+#include <string.h>
 
 // Weakly defined logging function - can be overridden by user
 __attribute__((weak)) void radio_log(const char *format, ...) {
@@ -411,6 +412,12 @@ static int32_t managePayloadReady(halRadio_t *inst) {
 
             // Reset the GPIO callback
             if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO0)) != HAL_GPIO_SUCCESS) {
+                mutex_exit(&inst->mutex);
+                return HAL_RADIO_GPIO_ERROR; // Fatal error
+            }
+
+            // Reset the GPIO callback
+            if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
                 mutex_exit(&inst->mutex);
                 return HAL_RADIO_GPIO_ERROR; // Fatal error
             }
