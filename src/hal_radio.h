@@ -181,6 +181,9 @@ typedef struct {
     // Thread/ISR safety management
     mutex_t mutex;
 
+    // Emergency RX abort flag - can be set from interrupt context without mutex
+    volatile bool abort_rx_flag;
+
     // Radio configuration
     halRadioConfig_t config;
     uint8_t          current_packet_size;
@@ -294,6 +297,13 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
  * Returns: halRadioErr_t
  */
 int32_t halRadioCancelReceive(halRadio_t *inst);
+
+/**
+ * Set emergency RX abort flag (can be called from interrupt context)
+ * Input: Pointer to instance
+ * Returns: halRadioErr_t
+ */
+int32_t halRadioSetRxAbort(halRadio_t *inst);
 
 /**
  * Cancel packet Transmit
