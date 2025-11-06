@@ -294,9 +294,10 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
 /**
  * Cancel packet Receive
  * Input: Pointer to instance
+ * Input: Flag if we should wait for mode switch
  * Returns: halRadioErr_t
  */
-int32_t halRadioCancelReceive(halRadio_t *inst);
+int32_t halRadioCancelReceive(halRadio_t *inst, bool wait_for_mode);
 
 /**
  * Set emergency RX abort flag (can be called from interrupt context)
@@ -308,9 +309,10 @@ int32_t halRadioSetRxAbort(halRadio_t *inst);
 /**
  * Cancel packet Transmit
  * Input: Pointer to instance
+ * Input: Wait for the mode switch
  * Returns: halRadioErr_t
  */
-int32_t halRadioCancelTransmit(halRadio_t *inst);
+int32_t halRadioCancelTransmit(halRadio_t *inst, bool wait_for_mode);
 
 /**
  * Enter transmit mode
