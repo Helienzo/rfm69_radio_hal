@@ -21,18 +21,34 @@
  */
 
 #include "hal_radio.h"
+#include <stdarg.h>
+#include <string.h>
 
-#ifndef LOG
-#define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
-#endif
+// Weakly defined logging function - can be overridden by user
+__attribute__((weak)) void radio_log(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    vprintf(format, args);
+    va_end(args);
+}
 
-#ifndef LOG_DEBUG_BUSY
-#define LOG_DEBUG_BUSY(f_, ...) printf((f_), ##__VA_ARGS__)
-#endif
+#ifndef HAL_RADIO_LOG_ENABLE
+#define HAL_RADIO_LOG_ENABLE (1)
+#endif /* HAL_RADIO_LOG_ENABLE */
 
-#ifndef LOG_DEBUG
+#if HAL_RADIO_LOG_ENABLE == 1
+#define LOG(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#define LOG_DEBUG_BUSY(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#else
+#define LOG(f_, ...)
+#define LOG_DEBUG_BUSY(f_, ...)
+#endif /* HAL_RADIO_LOG_ENABLE */
+
+#ifdef HAL_RADIO_LOG_DEBUG_ENABLE
+#define LOG_DEBUG(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#else
 #define LOG_DEBUG(f_, ...)
-#endif
+#endif /* HAL_RADIO_LOG_DEBUG_ENABLE */
 
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -110,8 +126,9 @@ static int32_t managePacketSent(halRadio_t *inst) {
         }
 
         mutex_exit(&inst->mutex);
-        // Reset the radio mode
-        inst->mode = HAL_RADIO_IDLE;
+        // Reset the radio state
+        inst->radio_state = HAL_RADIO_REC_IDLE;
+        inst->mode        = HAL_RADIO_IDLE;
 
         // Notify that the package send failed
         // TODO it is not really a send fail, this is a weird interrupt, might not be related to any packet
@@ -306,25 +323,25 @@ static int32_t managePayloadReady(halRadio_t *inst) {
         }
     }
 
-    // Get the current write pointer
-    uint8_t * raw_rx_buffer = NULL;
-    if ((raw_rx_buffer = cBufferGetWritePointer(rx_buf)) == NULL){
-        mutex_exit(&inst->mutex);
-        return HAL_RADIO_BUFFER_ERROR; // Fatal error
-    }
-
-    // Try to Read the rest of the payload
-    if (!rfm69_read(&inst->rfm, RFM69_REG_FIFO, raw_rx_buffer, inst->current_packet_size)) {
-        mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR; // Fatal error
-    }
-
-    if (cBufferEmptyWrite(rx_buf, inst->current_packet_size) < C_BUFFER_SUCCESS) {
-        mutex_exit(&inst->mutex);
-        return HAL_RADIO_BUFFER_ERROR; // Fatal error
-    }
-
+    // Read the rest of the payload using bytewise read (which checks abort flag)
+    uint8_t bytes_to_read = inst->current_packet_size;
     inst->current_packet_size = 0;
+
+    // Release mutex before calling byteWiseRead (it acquires the mutex itself)
+    mutex_exit(&inst->mutex);
+
+    int32_t read_result = byteWiseRead(inst, bytes_to_read);
+    if (read_result != HAL_RADIO_SUCCESS) {
+        // byteWiseRead already handled cleanup if abort flag was set
+        return read_result;
+    }
+
+    // Reacquire mutex for the remaining processing
+    taken = mutex_try_enter(&inst->mutex, NULL);
+    if (!taken) {
+        LOG_DEBUG_BUSY("BUSY ERROR %i\n", 3);
+        return HAL_RADIO_BUSY;
+    }
 
     // |SIZE|ADDR|PAYLOAD|, size = sizeof(addr) + sizeof(payload)
     // Get the target address for this package, should be this radio .., this call is safe
@@ -399,6 +416,12 @@ static int32_t managePayloadReady(halRadio_t *inst) {
                 return HAL_RADIO_GPIO_ERROR; // Fatal error
             }
 
+            // Reset the GPIO callback
+            if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
+                mutex_exit(&inst->mutex);
+                return HAL_RADIO_GPIO_ERROR; // Fatal error
+            }
+
             inst->mode = HAL_RADIO_IDLE;
             mutex_exit(&inst->mutex);
             return cb_res;
@@ -439,8 +462,9 @@ static int32_t manageDio0Interrupt(halRadio_t *inst) {
             break;
     }
 
-    // Reset the radio mode
-    inst->mode = HAL_RADIO_IDLE;
+    // Reset the radio state
+    inst->radio_state = HAL_RADIO_REC_IDLE;
+    inst->mode        = HAL_RADIO_IDLE;
 
     // Protect the radio during hal access
     bool taken = mutex_try_enter(&inst->mutex, NULL);
@@ -539,6 +563,15 @@ static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
     bool    state = false;
 
     while (read_bytes < num_bytes && e_time < expected_time) {
+        // Check emergency abort flag
+        if (inst->abort_rx_flag) {
+            // Release mutex before calling cancel receive
+            mutex_exit(&inst->mutex);
+            // Perform proper cleanup
+            halRadioCancelReceive(inst, false);
+            return HAL_RADIO_RECEIVE_FAIL; // Abort requested
+        }
+
         e_time = time_us_64() - s_time;
 
         if (!rfm69_irq2_flag_state(&inst->rfm, RFM69_IRQ2_FLAG_FIFO_NOT_EMPTY, &state)) {
@@ -714,8 +747,9 @@ static int32_t manageDio1Interrupt(halRadio_t *inst) {
             break;
     }
 
-    // Reset the radio mode
-    inst->mode = HAL_RADIO_IDLE;
+    // Reset the radio state
+    inst->radio_state = HAL_RADIO_REC_IDLE;
+    inst->mode        = HAL_RADIO_IDLE;
 
     // Protect access to the radio
     bool taken = mutex_try_enter(&inst->mutex, NULL);
@@ -772,6 +806,8 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
     if (inst == NULL) {
         return HAL_RADIO_NULL_ERROR;
     }
+
+    memset(inst, 0, sizeof(halRadio_t));
 
     // Initialize the spi
     spi_init(HAL_RADIO_SPI_INST, HAL_RADIO_SPI_BAUD_RATE);
@@ -1199,19 +1235,53 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
     return HAL_RADIO_SUCCESS;
 }
 
-int32_t halRadioCancelReceive(halRadio_t *inst) {
+int32_t halRadioDeInit(halRadio_t *inst) {
+    mutex_enter_blocking(&inst->mutex);
+
+    // Reset the GPIO callback
+    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO0)) != HAL_GPIO_SUCCESS) {
+        LOG("Failed to reset GPIO0 IRQ\n");
+    }
+
+    // Reset the GPIO callback
+    if ((halGpioDisableIrqCb(HAL_RADIO_PIN_DIO1)) != HAL_GPIO_SUCCESS) {
+        LOG("Failed to reset GPIO1 IRQ\n");
+    }
+
+    rfm69_reset(&inst->rfm);
+
+    memset(&inst->rfm, sizeof(inst->rfm), 0);
+
+    spi_deinit(HAL_RADIO_SPI_INST);
+
+    inst->radio_state         = HAL_RADIO_REC_IDLE;
+    inst->current_packet_size = 0;
+    inst->gpio_interrupt      = 0;
+    inst->mode                = HAL_RADIO_IDLE;
+    inst->package_callback    = NULL;
+
+    mutex_exit(&inst->mutex);
+    return HAL_RADIO_SUCCESS;
+}
+
+int32_t halRadioSetRxAbort(halRadio_t *inst) {
+    if (inst == NULL) {
+        return HAL_RADIO_NULL_ERROR;
+    }
+
+    // Set abort flag - no mutex needed, simple write from interrupt context
+    inst->abort_rx_flag = true;
+
+    return HAL_RADIO_SUCCESS;
+}
+
+int32_t halRadioCancelReceive(halRadio_t *inst, bool wait_for_mode) {
 
     uint32_t tst = 3;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
         LOG_DEBUG_BUSY("BUSY ERROR %i\n", 12);
         return HAL_RADIO_BUSY;
-    }
-
-    // Put radio back to default
-    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
-        mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
     }
 
     // Reset the GPIO callback
@@ -1226,7 +1296,25 @@ int32_t halRadioCancelReceive(halRadio_t *inst) {
         return HAL_RADIO_GPIO_ERROR;
     }
 
-    inst->mode = HAL_RADIO_IDLE;
+    // Put radio back to default
+    if (wait_for_mode) {
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+    } else {
+        if (!rfm69_write_masked(&inst->rfm, RFM69_REG_OP_MODE, RFM69_OP_MODE_STDBY, RFM69_OP_MODE_MASK)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+        inst->rfm.op_mode = RFM69_OP_MODE_STDBY;
+    }
+
+    inst->radio_state = HAL_RADIO_REC_IDLE;
+    inst->mode        = HAL_RADIO_IDLE;
+
+    // Clear the abort flag
+    inst->abort_rx_flag = false;
 
     mutex_exit(&inst->mutex);
     return HAL_RADIO_SUCCESS;
@@ -1571,7 +1659,7 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
     return HAL_RADIO_SUCCESS;
 }
 
-int32_t halRadioCancelTransmit(halRadio_t *inst) {
+int32_t halRadioCancelTransmit(halRadio_t *inst, bool wait_for_mode) {
     uint32_t tst = 5;
     bool taken = mutex_try_enter(&inst->mutex, &tst);
     if (!taken) {
@@ -1580,9 +1668,17 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
     }
 
     // Put radio back to default
-    if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
-        mutex_exit(&inst->mutex);
-        return HAL_RADIO_DRIVER_ERROR;
+    if (wait_for_mode) {
+        if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+    } else {
+        if (!rfm69_write_masked(&inst->rfm, RFM69_REG_OP_MODE, RFM69_OP_MODE_STDBY, RFM69_OP_MODE_MASK)) {
+            mutex_exit(&inst->mutex);
+            return HAL_RADIO_DRIVER_ERROR;
+        }
+        inst->rfm.op_mode = RFM69_OP_MODE_STDBY;
     }
 
     // Reset the GPIO callback
@@ -1597,7 +1693,8 @@ int32_t halRadioCancelTransmit(halRadio_t *inst) {
         return HAL_RADIO_GPIO_ERROR;
     }
 
-    inst->mode = HAL_RADIO_IDLE;
+    inst->radio_state = HAL_RADIO_REC_IDLE;
+    inst->mode        = HAL_RADIO_IDLE;
 
     mutex_exit(&inst->mutex);
 
@@ -1809,7 +1906,7 @@ int32_t halRadioEnterTX(halRadio_t *inst) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
-    inst->mode = HAL_RADIO_IDLE;
+    inst->mode = HAL_RADIO_TX_IDLE;
 
     mutex_exit(&inst->mutex);
     return HAL_RADIO_SUCCESS;
@@ -2069,6 +2166,12 @@ int32_t halRadioGetMode(halRadio_t *inst) {
     if (inst == NULL) {
         return HAL_RADIO_NULL_ERROR;
     }
+
+    if ((inst->radio_state == HAL_RADIO_REC_DATA || inst->radio_state == HAL_RADIO_REC_END) && inst->mode == HAL_RADIO_RX) {
+        // This is a special case where the RX is currently actively receiving a packet
+        return HAL_RADIO_RX_ACTIVE;
+    }
+
     return inst->mode;
 }
 

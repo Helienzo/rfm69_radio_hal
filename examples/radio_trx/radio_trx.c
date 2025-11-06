@@ -88,7 +88,7 @@ void buttonEventCb(picoBootSelButtonInterface_t *interface, picoBootSelButtonEve
         device_error();
     }
 
-    res = halRadioCancelReceive(&inst->hal_radio_inst);
+    res = halRadioCancelReceive(&inst->hal_radio_inst, true);
     if (res != HAL_RADIO_SUCCESS) {
         LOG("RADIO CANCEL RECEIVE FAILED! %i\n", res);
         device_error();

@@ -133,6 +133,7 @@ typedef enum {
     HAL_RADIO_TX_IDLE, // Radio is in TX but not transmitting
     HAL_RADIO_TX_QUEUE, // FiFo prepared for TX
     HAL_RADIO_RX,
+    HAL_RADIO_RX_ACTIVE,
 } halRadioMode_t;
 
 // Packet meta data
@@ -180,6 +181,9 @@ typedef struct {
     // Thread/ISR safety management
     mutex_t mutex;
 
+    // Emergency RX abort flag - can be set from interrupt context without mutex
+    volatile bool abort_rx_flag;
+
     // Radio configuration
     halRadioConfig_t config;
     uint8_t          current_packet_size;
@@ -219,6 +223,13 @@ int32_t halRadioEventInQueue(halRadio_t *inst);
  * Returns: halRadioErr_t
  */
 int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config);
+
+/**
+ * DeInitialize a radio instance
+ * Input: Pointer to instance
+ * Returns: halRadioErr_t
+ */
+int32_t halRadioDeInit(halRadio_t *inst);
 
 /**
  * Send package and wait for completion
@@ -283,16 +294,25 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
 /**
  * Cancel packet Receive
  * Input: Pointer to instance
+ * Input: Flag if we should wait for mode switch
  * Returns: halRadioErr_t
  */
-int32_t halRadioCancelReceive(halRadio_t *inst);
+int32_t halRadioCancelReceive(halRadio_t *inst, bool wait_for_mode);
+
+/**
+ * Set emergency RX abort flag (can be called from interrupt context)
+ * Input: Pointer to instance
+ * Returns: halRadioErr_t
+ */
+int32_t halRadioSetRxAbort(halRadio_t *inst);
 
 /**
  * Cancel packet Transmit
  * Input: Pointer to instance
+ * Input: Wait for the mode switch
  * Returns: halRadioErr_t
  */
-int32_t halRadioCancelTransmit(halRadio_t *inst);
+int32_t halRadioCancelTransmit(halRadio_t *inst, bool wait_for_mode);
 
 /**
  * Enter transmit mode
