@@ -85,6 +85,7 @@
 #define HAL_RADIO_MAX_PACKET_SIZE  (HAL_RADIO_MAX_BUFFER_SIZE - HAL_RADIO_PACKET_OVERHEAD)
 
 typedef enum {
+    HAL_RADIO_NOTHING_TO_SEND    = 2,
     HAL_RADIO_INTERRUPT_IN_QUEUE = 1,
     HAL_RADIO_SUCCESS            = 0,
     HAL_RADIO_NULL_ERROR         = -10001,
@@ -334,7 +335,7 @@ int32_t halRadioGetMode(halRadio_t *inst);
  * Input: Num bytes to send
  * Returns: halRadioErr_t or time
  */
-int32_t halRadioBitRateToDelayUs(halRadio_t *inst, halRadioBitrate_t bitrate, uint8_t num_bytes);
+int32_t halRadioBitRateToDelayUs(halRadio_t *inst, uint8_t num_bytes);
 
 /**
  * Calculate how many us it takes to transfer num_bytes over the spi interface to the radio.

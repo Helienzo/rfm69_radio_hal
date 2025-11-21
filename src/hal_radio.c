@@ -558,7 +558,7 @@ static int32_t byteWiseRead(halRadio_t *inst, uint8_t num_bytes) {
     cBuffer_t *rx_buf = inst->package_callback->pkt_buffer;
     uint64_t s_time = time_us_64();
     uint64_t e_time = 0;
-    int32_t expected_time = halRadioBitRateToDelayUs(inst, inst->config.bitrate, num_bytes) + halRadioSpiDelayEstimateUs(inst, num_bytes);
+    int32_t expected_time = halRadioBitRateToDelayUs(inst, num_bytes) + halRadioSpiDelayEstimateUs(inst, num_bytes);
     uint8_t read_bytes = 0;
     bool    state = false;
 
@@ -1336,6 +1336,8 @@ int32_t halRadioReceivePackageNB(halRadio_t *inst, halRadioInterface_t *interfac
     if (inst->mode == HAL_RADIO_TX) {
         LOG("Radio TX interrupted\n");
 
+        inst->mode == HAL_RADIO_TX_IDLE;
+
         // Notify that the package send failed
         int32_t cb_res = HAL_RADIO_SUCCESS;
         if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
@@ -1551,7 +1553,7 @@ int32_t halRadioReceivePackageBlocking(halRadio_t *inst, cBuffer_t *rx_buf, uint
         return HAL_RADIO_INVALID_SIZE;
     }
 
-    int32_t expected_time = halRadioBitRateToDelayUs(inst, inst->config.bitrate, inst->current_packet_size) + halRadioSpiDelayEstimateUs(inst, inst->current_packet_size);
+    int32_t expected_time = halRadioBitRateToDelayUs(inst, inst->current_packet_size) + halRadioSpiDelayEstimateUs(inst, inst->current_packet_size);
     uint64_t s_time = time_us_64();
     uint64_t e_time = 0;
 
@@ -1693,6 +1695,28 @@ int32_t halRadioCancelTransmit(halRadio_t *inst, bool wait_for_mode) {
         return HAL_RADIO_GPIO_ERROR;
     }
 
+    if (inst->mode == HAL_RADIO_TX) {
+        LOG("Radio TX interrupted\n");
+
+        inst->mode = HAL_RADIO_TX_IDLE;
+
+        // Notify that the package send failed
+        int32_t cb_res = HAL_RADIO_SUCCESS;
+        if (inst->package_callback != NULL && inst->package_callback->pkg_sent_cb != NULL) {
+            cb_res = inst->package_callback->pkg_sent_cb(inst->package_callback, &inst->active_package, HAL_RADIO_SEND_INTERRUPTED);
+        } else {
+            return HAL_RADIO_NULL_ERROR;
+        }
+
+        // Check if we should proceed or give up
+        if (cb_res != HAL_RADIO_SUCCESS) {
+            return cb_res;
+        }
+
+        // Reset the active package address
+        inst->active_package.address = 0;
+    }
+
     inst->radio_state = HAL_RADIO_REC_IDLE;
     inst->mode        = HAL_RADIO_IDLE;
 
@@ -1710,7 +1734,7 @@ static int32_t byteWiseWrite(halRadio_t *inst, cBuffer_t *tx_buf, uint8_t num_by
 
     uint64_t s_time = time_us_64();
     uint64_t e_time = 0;
-    int32_t expected_time = halRadioBitRateToDelayUs(inst, inst->config.bitrate, num_bytes) + halRadioSpiDelayEstimateUs(inst, num_bytes);
+    int32_t expected_time = halRadioBitRateToDelayUs(inst, num_bytes) + halRadioSpiDelayEstimateUs(inst, num_bytes);
     uint8_t writen_bytes = 0;
     bool    state = false;
 
@@ -1981,7 +2005,7 @@ int32_t halRadioQueueSend(halRadio_t *inst, bool wait_for_tx_mode) {
     if (inst->mode != HAL_RADIO_TX_QUEUE) {
         // Nothing to send. Which is fine
         mutex_exit(&inst->mutex);
-        return HAL_RADIO_SUCCESS;
+        return HAL_RADIO_NOTHING_TO_SEND;
     }
 
     if (wait_for_tx_mode) {
@@ -2175,7 +2199,7 @@ int32_t halRadioGetMode(halRadio_t *inst) {
     return inst->mode;
 }
 
-int32_t halRadioBitRateToDelayUs(halRadio_t *inst, halRadioBitrate_t bitrate, uint8_t num_bytes) {
+int32_t halRadioBitRateToDelayUs(halRadio_t *inst, uint8_t num_bytes) {
     if (inst == NULL || num_bytes == 0) {
         return HAL_RADIO_NULL_ERROR;
     }
@@ -2185,7 +2209,7 @@ int32_t halRadioBitRateToDelayUs(halRadio_t *inst, halRadioBitrate_t bitrate, ui
 
     int32_t time_us = 0;
 
-    switch(bitrate) {
+    switch(inst->config.bitrate) {
         case HAL_RADIO_BITRATE_1_2: {
             // Calculate the time i takes to send a single bit, round up
             int32_t bit_time_us = 1000000/1200 + 1;
