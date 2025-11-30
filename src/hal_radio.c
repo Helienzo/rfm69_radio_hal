@@ -855,6 +855,11 @@ int32_t halRadioInit(halRadio_t *inst, halRadioConfig_t hal_config) {
         return HAL_RADIO_DRIVER_ERROR;
     }
 
+    // Set the radio in standby mode
+	if (!rfm69_mode_set(&inst->rfm, RFM69_OP_MODE_STDBY)) {
+        return HAL_RADIO_DRIVER_ERROR;
+    }
+
     RFM69_MODEM_BITRATE rfm69_bitrate = 0;
     uint32_t            freq_dev      = 600;  // This is the absolute minimum
     RFM69_RXBW_MANTISSA bw_mantissa   = 0;
@@ -2205,7 +2210,7 @@ int32_t halRadioBitRateToDelayUs(halRadio_t *inst, uint8_t num_bytes) {
     }
 
     // Add the overhead created by the radio and hal layer
-    num_bytes += RFM69_DEFAULT_SYNC_WORD_LEN + RFM69_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD;
+    num_bytes += RFM69_DEFAULT_SYNC_WORD_LEN + HAL_RADIO_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD;
 
     int32_t time_us = 0;
 
@@ -2292,12 +2297,12 @@ int32_t halRadioSpiDelayEstimateUs(halRadio_t *inst, uint8_t num_bytes) {
     }
 
     // Verify that the value of the num_bytes is withing the maximum value
-    if (num_bytes > (255 - (RFM69_DEFAULT_SYNC_WORD_LEN + RFM69_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD))) {
+    if (num_bytes > (255 - (RFM69_DEFAULT_SYNC_WORD_LEN + HAL_RADIO_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD))) {
         return HAL_RADIO_INVALID_SIZE;
     }
 
     // Add the overhead created by the radio and hal layer
-    num_bytes += RFM69_DEFAULT_SYNC_WORD_LEN + RFM69_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD;
+    num_bytes += RFM69_DEFAULT_SYNC_WORD_LEN + HAL_RADIO_DEFAULT_PREAMBLE_LEN + HAL_RADIO_PACKET_OVERHEAD;
 
     // The maximum number of bytes to ever be consecutively read/written is RFM69_FIFO_SIZE
     // If the packet send or received is larger than RFM69_FIFO_SIZE the read/write will be done in the background
